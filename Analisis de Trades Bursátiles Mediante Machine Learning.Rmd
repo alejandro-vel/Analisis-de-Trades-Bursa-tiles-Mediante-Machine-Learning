@@ -1,0 +1,2180 @@
+---
+title: "Examen 4"
+subtitle: "Analisis de Trades Bursátiles Mediante Machine Learning"
+author: "Alejandro Velásquez Villavicencio, Fabiola Guadalupe Cruz Castellanos, Juan Carlos Ponce Domínguez, Rodrigo Natanael Angeles Mendoza, Elian Franco Lopez."
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Introducción.
+
+El análisis de datos financieros ha adquirido una relevancia considerable dentro de los mercados bursátiles debido al crecimiento en el volumen de información disponible y al desarrollo de técnicas avanzadas de aprendizaje automático. En particular, los modelos de clasificación supervisada permiten identificar patrones complejos dentro de grandes conjuntos de datos, facilitando la toma de decisiones basada en evidencia cuantitativa.
+
+En este proyecto se desarrollará un conjunto de modelos de Machine Learning aplicados al análisis de operaciones bursátiles reales (trades), con el propósito de clasificar cada operación como ganadora o perdedora a partir de variables operativas, temporales y categóricas asociadas a cada transacción.
+
+La base de datos utilizada contiene históricos reales de trading correspondientes a múltiples símbolos bursátiles, incluyendo activos tecnológicos de alta volatilidad como META, NVDA y TSLA, entre otros. Cada observación representa un trade individual e incluye información relacionada con precios de operación, horarios, cantidades negociadas y resultados financieros.
+
+El problema abordado corresponde a un esquema de clasificación binaria supervisada, donde la variable objetivo se define de la siguiente manera:
+
+$$
+Y =
+\begin{cases}
+1 & \text{si la PyG realizada es mayor a 0} \\
+0 & \text{si la PyG realizada es menor o igual a 0}
+\end{cases}
+$$
+
+Es importante destacar que el enfoque del proyecto no busca predecir el comportamiento futuro del mercado financiero, sino identificar patrones operativos asociados a trades exitosos utilizando información histórica observable.
+
+Para garantizar consistencia metodológica y evitar problemas de data leakage, variables directamente relacionadas con el resultado final del trade, como `PyG` y `MTM P/G`, no serán utilizadas como variables predictoras dentro de los modelos.
+
+Asimismo, la validación del desempeño se realizará mediante una partición temporal de los datos, utilizando observaciones antiguas para entrenamiento y observaciones recientes para prueba, simulando de manera más realista un escenario financiero operativo.
+
+Los modelos supervisados que serán implementados y comparados son:
+
+- Modelos de Regresión Logística
+- Máquinas de Soporte Vectorial (SVM)
+- Árboles de Decisión
+- Bosques Aleatorios (Random Forest)
+
+Cada modelo será evaluado utilizando métricas de clasificación como:
+
+- Accuracy
+- Precision
+- Recall
+- F1 Score
+- Sensibilidad
+- Especificidad
+- ROC-AUCç`
+
+Además, se analizarán las matrices de confusión correspondientes para interpretar correctamente los verdaderos positivos, verdaderos negativos, falsos positivos y falsos negativos obtenidos por cada algoritmo.
+
+# Objetivo general.
+
+Desarrollar y comparar distintos modelos de clasificación supervisada capaces de predecir si un trade bursátil resultará ganador o perdedor, utilizando variables operativas, temporales y categóricas derivadas de históricos reales de trading.
+
+## Objetivos específicos.
+
+1. Realizar el proceso de limpieza y preparación de la base de datos financiera.
+
+2. Generar variables derivadas relevantes a partir de información temporal y operativa.
+
+3. Implementar modelos de regresión logística para analizar relaciones probabilísticas e interpretar coeficientes y odds ratios.
+
+4. Construir modelos de Máquinas de Soporte Vectorial en escenarios bidimensionales, tridimensionales y multivariados.
+
+5. Desarrollar árboles de decisión utilizando distintos criterios de partición y técnicas de poda.
+
+6. Implementar modelos de Bosques Aleatorios evaluando hiperparámetros e importancia de variables.
+
+7. Comparar el desempeño predictivo de todos los modelos mediante métricas de clasificación y matrices de confusión.
+
+8. Identificar patrones operativos asociados a trades bursátiles exitosos.
+
+# Justificación del proyecto.
+
+La selección de esta base de datos resulta adecuada debido a que contiene operaciones bursátiles reales con estructura temporal, variables categóricas y resultados financieros observables, permitiendo aplicar metodologías modernas de aprendizaje supervisado en un contexto financiero realista.
+
+Además, la diversidad de símbolos bursátiles fortalece la capacidad de generalización de los modelos, evitando que el análisis se limite al comportamiento de un único activo financiero.
+
+Este proyecto permite integrar conceptos de:
+
+- limpieza y manipulación de datos,
+- análisis exploratorio,
+- modelado estadístico,
+- aprendizaje automático,
+- validación de modelos,
+- interpretación financiera,
+- y evaluación comparativa de algoritmos de clasificación.
+
+Finalmente, el proyecto busca demostrar que existen patrones operativos identificables dentro de los trades bursátiles y que los modelos supervisados pueden capturar dichos patrones para apoyar procesos de análisis financiero y toma de decisiones cuantitativas.
+
+# Paqueterías.
+
+```{r message=FALSE, warning=FALSE}
+# Manipulación y limpieza de datos
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(lubridate)
+library(janitor)
+
+# Visualización
+library(ggplot2)
+library(GGally)
+library(plotly)
+library(corrplot)
+
+# Modelos estadísticos y machine learning
+library(caret)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+# Métricas y evaluación
+library(pROC)
+library(yardstick)
+library(caTools)
+
+# Utilidades adicionales
+library(scales)
+library(knitr)
+library(kableExtra)
+```
+
+# Limpieza y preparación de datos.
+
+```{r message=FALSE, warning=FALSE}
+# 1. Importación del archivo
+
+raw_data <- read.csv(
+  "BASE OPERACIONES.csv",
+  stringsAsFactors = FALSE,
+  encoding = "UTF-8"
+)
+
+# Visualización inicial
+head(raw_data)
+
+# 2. Extracción de nombres reales de variables
+
+# La fila 4 contiene los encabezados reales
+real_headers <- as.character(raw_data[4, ])
+
+# Renombrar columnas correctamente
+colnames(raw_data) <- c(
+  "Statement",
+  "Header",
+  "Nombre_del_campo",
+  "Valor_del_campo",
+  "Divisa",
+  "Cuenta",
+  "Simbolo",
+  "Fecha_Hora",
+  "Cantidad",
+  "Precio_Transaccion",
+  "Precio_Cierre",
+  "Productos",
+  "Tarifa_Comision",
+  "Basico",
+  "PyG_Realizada",
+  "MTM_PG",
+  "Codigo"
+)
+
+# 3. Conservamos únicamente trades reales
+
+trades <- raw_data %>%
+  filter(
+    Statement == "Operaciones",
+    Header == "Data"
+  )
+
+# 4. Eliminar fila de encabezados incrustada
+
+trades <- trades[-1, ]
+
+# 5. Eliminar columnas irrelevantes
+
+trades <- trades %>%
+  select(
+    -Statement,
+    -Header,
+    -Nombre_del_campo,
+    -Valor_del_campo,
+    -Cuenta
+  )
+
+# 6. Conversión de tipos de datos
+
+variables_numericas <- c(
+  "Cantidad",
+  "Precio_Transaccion",
+  "Precio_Cierre",
+  "Productos",
+  "Tarifa_Comision",
+  "Basico",
+  "PyG_Realizada",
+  "MTM_PG"
+)
+
+trades[variables_numericas] <- lapply(
+  trades[variables_numericas],
+  as.numeric
+)
+
+# Conversión de fecha
+trades$Fecha_Hora <- ymd_hms(trades$Fecha_Hora)
+
+# Variables categóricas
+trades$Divisa <- as.factor(trades$Divisa)
+trades$Simbolo <- as.factor(trades$Simbolo)
+trades$Codigo <- as.factor(trades$Codigo)
+
+# 7. Creación de variable objetivo
+
+trades <- trades %>%
+  mutate(
+    Target = ifelse(PyG_Realizada > 0, 1, 0)
+  )
+
+trades$Target <- as.factor(trades$Target)
+
+# 8. Eliminación de variables con leakage
+
+trades <- trades %>%
+  select(
+    -PyG_Realizada,
+    -MTM_PG
+  )
+
+# 9. Revisión de NA's
+
+colSums(is.na(trades))
+
+# 10. Revisión de duplicados
+
+sum(duplicated(trades))
+
+# 11. Verificación final
+
+str(trades)
+
+summary(trades)
+
+head(trades)
+
+# Se identificó que la variable `Divisa` contenía únicamente un nivel (`USD`) para todas las observaciones del dataset, por lo que es conveniente eliminar la columna para evitar ruido.
+# Eliminación de variable constante
+
+trades <- trades %>%
+  select(-Divisa)
+# Se detectaron 113 valores faltantes en la variable `Cantidad`
+# Eliminación de filas con NA en Cantidad
+
+trades <- trades %>%
+  drop_na(Cantidad)
+
+# Verificación final
+colSums(is.na(trades))
+dim(trades)
+```
+## Observaciones finales de limpieza y preparación.
+
+Después del proceso de limpieza y estructuración de la base de datos, se realizaron verificaciones adicionales para garantizar consistencia estadística y compatibilidad con los modelos de clasificación supervisada.
+
+## Variable constante.
+
+Durante la revisión de variables categóricas se identificó que la variable `Divisa` contenía únicamente un nivel (`USD`) para todas las observaciones del dataset.
+
+Debido a que esta variable no presenta variabilidad, no aporta capacidad predictiva al modelo y puede introducir ruido innecesario en algunos algoritmos, se decidió eliminarla del conjunto final de variables.
+
+## Valores faltantes.
+
+Se detectaron 113 valores faltantes en la variable `Cantidad`, lo que representa una proporción pequeña respecto al total de observaciones de la base de datos.
+
+Dado que la cantidad operada representa una variable financiera sensible y directamente relacionada con la magnitud de cada trade, se decidió no realizar imputaciones artificiales para evitar distorsionar el comportamiento real de las operaciones bursátiles.
+
+Por ello, las observaciones con valores faltantes fueron eliminadas del dataset.
+
+## Registros duplicados.
+
+Se identificaron registros aparentemente duplicados dentro de la base de datos. Sin embargo, debido a la naturaleza operativa del trading bursátil, estos registros podrían corresponder a ejecuciones parciales, fragmentación de órdenes o múltiples operaciones legítimas realizadas bajo condiciones similares.
+
+Por esta razón, los duplicados no fueron eliminados automáticamente, evitando así la posible pérdida de información relevante para el análisis.
+
+## Balance de clases.
+
+La variable objetivo presentó un desbalance moderado entre trades ganadores y perdedores.
+
+Esto implica que métricas como Accuracy no serán suficientes para evaluar correctamente el desempeño de los modelos. Por ello, el análisis posterior incorporará métricas adicionales como:
+
+- Precisión
+- Recall
+- F1 Score
+- Sensibilidad
+- Especificidad
+- ROC-AUC
+
+con el objetivo de obtener una evaluación más robusta y adecuada para problemas de clasificación desbalanceada.
+
+## Verificación final.
+
+Finalmente, se verificó que:
+
+- las variables numéricas fueron convertidas correctamente,
+- las variables categóricas quedaron definidas como factores,
+- las fechas fueron transformadas a formato temporal,
+- y el dataset quedó completamente preparado.
+
+# Manipulación de datos y variables derivadas.
+
+```{r message=FALSE, warning=FALSE}
+# 1. Variables temporales
+trades <- trades %>%
+  mutate(
+    # Año
+    Anio = year(Fecha_Hora),
+    # Mes
+    Mes = month(Fecha_Hora),
+    # Día del mes
+    Dia = day(Fecha_Hora),
+    # Día de la semana
+    Dia_Semana = wday(Fecha_Hora,
+                      label = TRUE,
+                      abbr = FALSE),
+    # Hora
+    Hora = hour(Fecha_Hora),
+    # Minuto
+    Minuto = minute(Fecha_Hora)
+  )
+
+# 2. Franja horaria de operación
+trades <- trades %>%
+  mutate(
+
+    Franja_Horaria = case_when(
+      Hora >= 4  & Hora < 9  ~ "Pre-Market",
+      Hora >= 9  & Hora < 12 ~ "Apertura",
+      Hora >= 12 & Hora < 16 ~ "Media_Sesion",
+      Hora >= 16 & Hora < 20 ~ "After-Hours",
+      TRUE ~ "Nocturno"
+    )
+  )
+
+# Conversión a factor
+trades$Franja_Horaria <- as.factor(trades$Franja_Horaria)
+
+# 3. Diferencia entre precio de transacción y cierre
+trades <- trades %>%
+  mutate(
+
+    Diferencia_Cierre =
+      Precio_Transaccion - Precio_Cierre
+  )
+
+# 4. Diferencia porcentual respecto al cierre
+trades <- trades %>%
+  mutate(
+
+    Diferencia_Porc =
+      ((Precio_Transaccion - Precio_Cierre)
+       / Precio_Cierre) * 100
+
+  )
+
+# 5. Volumen monetario absoluto
+trades <- trades %>%
+  mutate(
+
+    Volumen_Monetario =
+      abs(Cantidad * Precio_Transaccion)
+
+  )
+
+# 6. Dirección de la operación
+trades <- trades %>%
+  mutate(
+
+    Direccion = case_when(
+
+      Cantidad > 0 ~ "Long",
+
+      Cantidad < 0 ~ "Short",
+
+      TRUE ~ "Neutro"
+
+    )
+
+  )
+
+# Conversión a factor
+trades$Direccion <- as.factor(trades$Direccion)
+
+# 7. Magnitud absoluta de contratos
+
+trades <- trades %>%
+  mutate(
+
+    Cantidad_Abs = abs(Cantidad)
+
+  )
+
+# 8. Orden temporal del dataset
+trades <- trades %>%
+  arrange(Fecha_Hora)
+
+# 9. Revisión de nuevas variables
+str(trades)
+summary(trades)
+head(trades)
+
+```
+## Resultados de la manipulación de datos y variables derivadas.
+
+Después del proceso de manipulación y transformación de variables, el dataset quedó conformado por 5953 observaciones y 22 variables listas para análisis exploratorio y modelado supervisado.
+
+## Variables temporales.
+
+A partir de la variable `Fecha_Hora` se generaron nuevas variables relacionadas con la dimensión temporal de las operaciones bursátiles, incluyendo:
+
+- año,
+- mes,
+- día,
+- día de la semana,
+- hora,
+- minuto,
+- y franja horaria.
+
+Estas variables permiten capturar posibles patrones asociados a horarios específicos de trading y diferencias operativas entre distintos momentos del mercado financiero.
+
+## Franja horaria.
+
+La mayoría de las operaciones se concentraron durante la sesión regular del mercado (`Media_Sesion`) y en la apertura (`Apertura`), mientras que una proporción menor correspondió a operaciones realizadas en horarios extendidos (`Pre-Market` y `After-Hours`).
+
+Este comportamiento resulta consistente con la dinámica habitual de los mercados bursátiles, donde la liquidez y volumen de operaciones suelen ser mayores durante horarios regulares de negociación.
+
+## Variables derivadas de precios.
+
+Se construyeron variables relacionadas con diferencias entre el precio de transacción y el precio de cierre del activo:
+
+- `Diferencia_Cierre`
+- `Diferencia_Porc`
+
+Estas variables permiten medir desviaciones operativas y movimientos relativos del precio, facilitando la comparación entre activos con distintos niveles de cotización.
+
+## Dirección de la operación.
+
+La variable `Direccion` permitió distinguir entre:
+
+- posiciones `Long`,
+- y posiciones `Short`.
+
+Se observó una distribución relativamente equilibrada entre ambos tipos de operaciones, lo cual resulta favorable para el análisis predictivo y podría aportar capacidad explicativa adicional a los modelos supervisados.
+
+## Volumen monetario.
+
+La variable `Volumen_Monetario` permitió cuantificar el tamaño económico de cada trade, observándose una alta dispersión entre operaciones pequeñas y operaciones de gran magnitud.
+
+Esto sugiere la existencia de heterogeneidad operativa dentro del dataset, característica común en bases de trading financiero reales.
+
+## Organización temporal.
+
+Finalmente, el dataset fue ordenado cronológicamente utilizando la variable `Fecha_Hora`, preparando correctamente la información para una validación temporal posterior, evitando leakage y simulando un escenario financiero más realista.
+
+# Análisis exploratorio y visualizaciones.
+
+```{r message=FALSE, warning=FALSE}
+# 1. Distribución de la variable objetivo
+ggplot(trades, aes(x = Target, fill = Target)) +
+  geom_bar(alpha = 0.8) +
+
+  labs(
+    title = "Distribución de Trades Ganadores vs Perdedores",
+    x = "Clase",
+    y = "Frecuencia"
+  ) +
+
+  theme_minimal()
+
+# 2. Distribución de símbolos bursátiles
+ggplot(trades,
+       aes(x = reorder(Simbolo, Simbolo, function(x) -length(x)),
+           fill = Simbolo)) +
+
+  geom_bar(show.legend = FALSE) +
+
+  labs(
+    title = "Distribución de Operaciones por Símbolo",
+    x = "Símbolo Bursátil",
+    y = "Número de Trades"
+  ) +
+
+  theme_minimal() +
+
+  theme(axis.text.x = element_text(angle = 90))
+
+# 3. Distribución de dirección de operación
+ggplot(trades,
+       aes(x = Direccion,
+           fill = Direccion)) +
+  geom_bar(alpha = 0.8) +
+  labs(
+    title = "Distribución de Posiciones Long y Short",
+    x = "Dirección",
+    y = "Frecuencia"
+  ) +
+
+  theme_minimal()
+
+# 4. Histograma de volumen monetario
+ggplot(trades,
+       aes(x = Volumen_Monetario)) +
+
+  geom_histogram(bins = 40,
+                 fill = "steelblue",
+                 color = "black",
+                 alpha = 0.8) +
+
+  labs(
+    title = "Distribución del Volumen Monetario",
+    x = "Volumen Monetario",
+    y = "Frecuencia"
+  ) +
+
+  theme_minimal()
+
+# 5. Histograma logarítmico del volumen monetario
+ggplot(trades,
+       aes(x = Volumen_Monetario)) +
+
+  geom_histogram(bins = 40,
+                 fill = "darkgreen",
+                 color = "black",
+                 alpha = 0.8) +
+
+  scale_x_log10() +
+
+  labs(
+    title = "Distribución Logarítmica del Volumen Monetario",
+    x = "Volumen Monetario (Escala Log)",
+    y = "Frecuencia"
+  ) +
+
+  theme_minimal()
+
+# 6. Boxplot de Diferencia_Porc por clase
+ggplot(trades,
+       aes(x = Target,
+           y = Diferencia_Porc,
+           fill = Target)) +
+
+  geom_boxplot(alpha = 0.8) +
+
+  labs(
+    title = "Diferencia Porcentual por Tipo de Trade",
+    x = "Target",
+    y = "Diferencia %"
+  ) +
+
+  theme_minimal()
+
+# 7. Trades por día de la semana
+ggplot(trades,
+       aes(x = Dia_Semana,
+           fill = Dia_Semana)) +
+
+  geom_bar(show.legend = FALSE) +
+
+  labs(
+    title = "Distribución de Trades por Día de la Semana",
+    x = "Día",
+    y = "Frecuencia"
+  ) +
+
+  theme_minimal()
+# 8. Trades por franja horaria
+ggplot(trades,
+       aes(x = Franja_Horaria,
+           fill = Franja_Horaria)) +
+
+  geom_bar(show.legend = FALSE) +
+  labs(
+    title = "Distribución de Trades por Franja Horaria",
+    x = "Franja Horaria",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+
+# 9. Relación entre Precio Transacción y Precio Cierre
+ggplot(trades,
+       aes(x = Precio_Cierre,
+           y = Precio_Transaccion,
+           color = Target)) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "Precio de Transacción vs Precio de Cierre",
+    x = "Precio de Cierre",
+    y = "Precio de Transacción"
+  ) +
+  theme_minimal()
+
+# 10. Correlación entre variables numéricas
+variables_numericas <- trades %>%
+  select(where(is.numeric))
+matriz_cor <- cor(variables_numericas)
+corrplot(matriz_cor,
+         method = "color",
+         type = "upper",
+         tl.cex = 0.8)
+
+# 11. Evaluación exploratoria de variable Basico
+ggplot(trades,
+       aes(x = Target,
+           y = Basico,
+           fill = Target)) +
+  geom_boxplot(alpha = 0.8) +
+  labs(
+    title = "Distribución de Basico por Clase",
+    x = "Target",
+    y = "Basico"
+  ) +
+  theme_minimal()
+
+# 12. Relación entre Basico y Diferencia_Porc
+ggplot(trades,
+       aes(x = Diferencia_Porc,
+           y = Basico,
+           color = Target)) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "Relación entre Basico y Diferencia_Porc",
+    x = "Diferencia %",
+    y = "Basico"
+  ) +
+  theme_minimal()
+
+# 13. Matriz de pares para SVM
+variables_svm <- trades %>%
+  select(
+    Diferencia_Porc,
+    Volumen_Monetario,
+    Cantidad_Abs,
+    Precio_Transaccion,
+    Precio_Cierre,
+    Target
+  )
+ggpairs(
+  variables_svm,
+  aes(color = Target,
+      alpha = 0.5)
+)
+
+```
+
+Tras realizar el análisis exploratorio de datos mediante visualizaciones univariadas, bivariadas y multivariadas, fue posible identificar patrones relevantes dentro del comportamiento de las operaciones bursátiles y evaluar la calidad estadística del dataset antes de iniciar el modelado.
+
+En primer lugar, se observó que la variable objetivo `Target` presenta un desbalance moderado entre trades ganadores y perdedores, aunque no lo suficientemente severo como para requerir técnicas inmediatas de rebalanceo. Asimismo, variables como `Direccion`, `Franja_Horaria`, `Dia_Semana` y `Simbolo` mostraron patrones diferenciados entre operaciones, sugiriendo que podrían aportar información relevante para la clasificación de trades.
+
+El análisis del volumen monetario evidenció una distribución altamente sesgada y con presencia de valores extremos. Sin embargo, al aplicar una transformación logarítmica, la distribución adquirió una forma mucho más estable y cercana a una distribución normal, justificando el uso posterior de variables transformadas durante el entrenamiento de modelos sensibles a escalas y varianzas.
+
+Por otro lado, las matrices de correlación y los gráficos de dispersión permitieron detectar relaciones extremadamente fuertes entre algunas variables, particularmente entre `Precio_Transaccion` y `Precio_Cierre`, así como entre `Cantidad_Abs` y `Volumen_Monetario`, lo que indica la existencia de multicolinealidad y posibles redundancias dentro del conjunto de datos.
+
+Uno de los hallazgos más importantes fue la identificación de variables con posible leakage de información, específicamente `Basico`, `Diferencia_Cierre` y `Diferencia_Porc`. Las visualizaciones mostraron que dichas variables contienen información directamente relacionada con el resultado final del trade, generando una separación artificial entre clases. Debido a ello, estas variables serán excluidas del modelado supervisado para evitar sesgos y mantener la validez predictiva de los modelos.
+
+Finalmente, el análisis multivariado mostró que las clases no presentan una separación lineal clara en el espacio de características. Esto sugiere que modelos lineales podrían resultar insuficientes para capturar la complejidad del problema, por lo que posteriormente se evaluarán tanto modelos lineales como no lineales, incluyendo Modelo Máquina de Soporte Vectorial con kernel radial (RBF), con el objetivo de comparar desempeño y capacidad de generalización.
+
+# Preparación de datos para modelado.
+
+```{r message=FALSE, warning=FALSE}
+# 1. Eliminación formal de variables con leakage
+trades_ml <- trades %>%
+  select(
+    -Basico,
+    -Diferencia_Cierre,
+    -Diferencia_Porc
+  )
+
+# 2. Transformación logarítmica del volumen monetario
+trades_ml <- trades_ml %>%
+  mutate(
+    Volumen_Monetario_Log =
+      log1p(Volumen_Monetario)
+  )
+
+# 3. Eliminación de variable original sesgada
+trades_ml <- trades_ml %>%
+  select(-Volumen_Monetario)
+
+# 4. Eliminación de variables redundantes
+# Debido a la alta correlación observada entre Precio_Transaccion y Precio_Cierre, se conservará únicamente Precio_Transaccion
+trades_ml <- trades_ml %>%
+  select(-Precio_Cierre)
+
+# 5. Conversión de variables categóricas
+trades_ml$Simbolo <- as.factor(trades_ml$Simbolo)
+trades_ml$Direccion <- as.factor(trades_ml$Direccion)
+trades_ml$Dia_Semana <- factor(
+  trades_ml$Dia_Semana,
+  levels = c(
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday"
+  ),
+  ordered = TRUE
+)
+
+trades_ml$Franja_Horaria <- as.factor(trades_ml$Franja_Horaria)
+
+trades_ml <- trades_ml %>%
+  select(-Anio)
+
+# 6. Eliminación de variable temporal original
+# La información temporal ya fue descompuesta en variables derivadas
+trades_ml <- trades_ml %>%
+  select(-Fecha_Hora)
+
+# 7. División temporal Train/Test
+# Orden cronológico
+trades_ml <- trades_ml %>%
+  arrange(Mes, Dia, Hora, Minuto)
+# Índice de corte temporal (80% train / 20% test)
+split_index <- floor(0.80 * nrow(trades_ml))
+# Train
+train_data <- trades_ml[1:split_index, ]
+# Test
+test_data <- trades_ml[(split_index + 1):nrow(trades_ml), ]
+# ELIMINAR NIVELES VACÍOS EN TRAIN
+train_data <- droplevels(train_data)
+# ALINEACIÓN DE NIVELES FACTOR
+# Simbolo
+test_data$Simbolo <- factor(
+  test_data$Simbolo,
+  levels = levels(train_data$Simbolo)
+)
+
+# Codigo
+test_data$Codigo <- factor(
+  test_data$Codigo,
+  levels = levels(train_data$Codigo)
+)
+
+# Franja Horaria
+test_data$Franja_Horaria <- factor(
+  test_data$Franja_Horaria,
+  levels = levels(train_data$Franja_Horaria)
+)
+
+# Direccion
+test_data$Direccion <- factor(
+  test_data$Direccion,
+  levels = levels(train_data$Direccion)
+)
+
+# Dia Semana
+test_data$Dia_Semana <- factor(
+  test_data$Dia_Semana,
+  levels = levels(train_data$Dia_Semana),
+  ordered = TRUE
+)
+
+# ELIMINAR OBSERVACIONES CON NIVELES NUEVOS
+test_data <- na.omit(test_data)
+
+# ELIMINAR NIVELES VACÍOS EN TEST
+test_data <- droplevels(test_data)
+
+# Verificación
+levels(train_data$Simbolo)
+levels(test_data$Simbolo)
+
+# 8. Verificación de dimensiones
+dim(train_data)
+dim(test_data)
+
+# 9. Distribución de clases
+prop.table(table(train_data$Target))
+prop.table(table(test_data$Target))
+
+# 10. Variables numéricas para escalamiento
+variables_numericas <- c(
+  "Cantidad",
+  "Precio_Transaccion",
+  "Productos",
+  "Tarifa_Comision",
+  "Cantidad_Abs",
+  "Volumen_Monetario_Log",
+  "Hora",
+  "Minuto",
+  "Dia",
+  "Mes"
+)
+
+# 11. Escalamiento usando únicamente TRAIN
+preprocessing <- preProcess(
+  train_data[, variables_numericas],
+  method = c("center", "scale")
+)
+
+# Aplicar transformación
+train_data[, variables_numericas] <-
+  predict(preprocessing,
+          train_data[, variables_numericas])
+
+test_data[, variables_numericas] <-
+  predict(preprocessing,
+          test_data[, variables_numericas])
+
+# 12. Verificación final
+str(train_data)
+str(test_data)
+summary(train_data)
+summary(test_data)
+head(train_data)
+head(test_data)
+```
+En esta etapa se realizó el preprocesamiento formal del dataset con el objetivo de preparar la información para el entrenamiento de modelos supervisados de Machine Learning, garantizando consistencia estadística, reducción de sesgos y una validación metodológicamente adecuada para datos financieros.
+
+Como primer paso, se eliminaron las variables `Basico`, `Diferencia_Cierre` y `Diferencia_Porc`, debido a que el análisis exploratorio mostró que contenían información directamente relacionada con el resultado final del trade. Mantener dichas variables habría introducido leakage de información, permitiendo que los modelos aprendieran patrones imposibles de conocer antes de ejecutar una operación real.
+
+Posteriormente, se aplicó una transformación logarítmica sobre `Volumen_Monetario`, ya que esta variable presentaba una distribución altamente sesgada y con presencia de valores extremos. La transformación permitió estabilizar la varianza y reducir el impacto de outliers, generando una variable más adecuada para algoritmos sensibles a escalas y distancias, como Support Vector Machines y Regresión Logística.
+
+También se eliminaron variables redundantes, particularmente `Precio_Cierre`, debido a la alta correlación observada con `Precio_Transaccion`. Esta decisión ayuda a reducir problemas de multicolinealidad y evita introducir información prácticamente duplicada dentro del modelo.
+
+En relación con las variables temporales, `Fecha_Hora` fue reemplazada por componentes derivados como `Anio`, `Mes`, `Dia`, `Hora`, `Minuto`, `Dia_Semana` y `Franja_Horaria`, permitiendo capturar patrones temporales de manera más interpretable y útil para el modelado.
+
+Uno de los aspectos metodológicos más importantes de esta etapa fue la división temporal del dataset en conjuntos de entrenamiento y prueba. A diferencia de una partición aleatoria tradicional, el dataset fue ordenado cronológicamente antes de realizar la separación 80/20. De esta manera, el conjunto de entrenamiento contiene operaciones más antiguas y el conjunto de prueba operaciones más recientes, simulando un escenario real de predicción financiera donde el modelo aprende del pasado para intentar generalizar hacia el futuro. Este enfoque evita leakage temporal y proporciona una evaluación mucho más realista del desempeño del modelo.
+
+Los outputs obtenidos muestran que la distribución de clases se mantuvo relativamente estable entre train y test, lo cual indica que la división temporal conservó adecuadamente la estructura general del dataset. Asimismo, las variables numéricas fueron correctamente estandarizadas mediante centrado y escalamiento, observándose medias cercanas a cero y magnitudes comparables entre variables.
+
+Finalmente, las variables categóricas quedaron correctamente tipadas como factores u ordered factors, dejando el dataset completamente preparado para las siguientes etapas de modelado supervisado y comparación de algoritmos de clasificación.
+
+
+
+
+# Modelado supervisado.
+
+## Regresión logística.
+
+```{r message=FALSE, warning=FALSE}
+# MODELADO SUPERVISADO
+# 1. Librerías
+library(caret)
+library(e1071)
+library(pROC)
+
+# 2. Conversión formal del target
+train_data$Target <- as.factor(train_data$Target)
+test_data$Target <- as.factor(test_data$Target)
+
+# 3. Fórmula del modelo
+formula_modelo <- Target ~ .
+
+### Logística Completa
+# 4. Entrenamiento
+modelo_logit_1 <- glm(
+  formula_modelo,
+  data = train_data,
+  family = binomial
+)
+
+# 5. Predicciones probabilísticas
+prob_logit_1 <- predict(
+  modelo_logit_1,
+  newdata = test_data,
+  type = "response"
+)
+
+# 6. Conversión a clases
+pred_logit_1 <- ifelse(prob_logit_1 > 0.5, 1, 0)
+pred_logit_1 <- as.factor(pred_logit_1)
+
+# 7. Matriz de confusión
+confusionMatrix(
+  pred_logit_1,
+  test_data$Target
+)
+
+# 8. Curva ROC y AUC
+roc_logit_1 <- roc(
+  response = test_data$Target,
+  predictor = prob_logit_1
+)
+
+auc(roc_logit_1)
+plot(
+  roc_logit_1,
+  col = "blue",
+  main = "ROC - Regresión Logística"
+)
+
+### Logística Reducida
+formula_logit_2 <-
+  Target ~ Cantidad +
+  Precio_Transaccion +
+  Productos +
+  Tarifa_Comision +
+  Direccion +
+  Franja_Horaria
+
+modelo_logit_2 <- glm(
+  formula_logit_2,
+  data = train_data,
+  family = binomial
+)
+
+prob_logit_2 <- predict(
+  modelo_logit_2,
+  newdata = test_data,
+  type = "response"
+)
+
+pred_logit_2 <- ifelse(prob_logit_2 > 0.5, 1, 0)
+
+pred_logit_2 <- as.factor(pred_logit_2)
+
+confusionMatrix(
+  pred_logit_2,
+  test_data$Target
+)
+
+roc_logit_2 <- roc(
+  response = test_data$Target,
+  predictor = prob_logit_2
+)
+
+auc(roc_logit_2)
+
+plot(
+  roc_logit_2,
+  col = "purple",
+  main = "ROC - Regresión Logística Reducida"
+)
+
+### Logística con Interacción
+formula_logit_3 <-
+  Target ~ Cantidad * Direccion +
+  Precio_Transaccion +
+  Productos +
+  Tarifa_Comision +
+  Franja_Horaria
+
+modelo_logit_3 <- glm(
+  formula_logit_3,
+  data = train_data,
+  family = binomial
+)
+
+prob_logit_3 <- predict(
+  modelo_logit_3,
+  newdata = test_data,
+  type = "response"
+)
+
+pred_logit_3 <- ifelse(prob_logit_3 > 0.5, 1, 0)
+pred_logit_3 <- as.factor(pred_logit_3)
+
+confusionMatrix(
+  pred_logit_3,
+  test_data$Target
+)
+
+roc_logit_3 <- roc(
+  response = test_data$Target,
+  predictor = prob_logit_3
+)
+
+auc(roc_logit_3)
+
+plot(
+  roc_logit_3,
+  col = "orange",
+  main = "ROC - Regresión Logística con Interacción"
+)
+```
+
+## Conclusión de modelos lineales.
+
+En esta sección se desarrollaron y evaluaron tres variantes de regresión logística con el objetivo de modelar la dirección de los trades bursátiles a partir de variables temporales, operativas y categóricas derivadas del dataset.
+
+Inicialmente, se construyó un modelo logístico completo utilizando la totalidad de variables disponibles. Sin embargo, los resultados obtenidos mostraron una capacidad predictiva limitada, reflejada en un AUC aproximado de 0.614 y una curva ROC cercana a la diagonal aleatoria. Esto sugiere que la inclusión indiscriminada de variables puede introducir ruido, redundancia y relaciones difíciles de capturar mediante un modelo lineal tradicional.
+
+Posteriormente, se implementó un modelo logístico reducido, eliminando variables menos relevantes y conservando únicamente aquellas con mayor capacidad explicativa. Esta estrategia mejoró significativamente el desempeño del modelo, elevando el AUC hasta aproximadamente 0.763. La mejora observada evidencia la importancia de realizar selección de variables y construir modelos más parsimoniosos para evitar sobreajuste y mejorar la capacidad de generalización.
+
+Finalmente, se desarrolló un modelo logístico con términos de interacción entre variables. Este modelo obtuvo el mejor desempeño dentro de los enfoques lineales, alcanzando un AUC cercano a 0.767. La inclusión de interacciones permitió capturar dependencias conjuntas entre variables explicativas que no podían ser representadas mediante relaciones puramente aditivas.
+
+En conjunto, los resultados demuestran que los modelos lineales pueden capturar parcialmente patrones presentes en los trades bursátiles, especialmente cuando existe una adecuada ingeniería de variables. Sin embargo, también se observa que las relaciones presentes en los datos poseen componentes no lineales importantes que limitan el desempeño máximo alcanzable mediante regresión logística convencional.
+
+# Modelo de máquinas de soporte vectorial (SVM).
+
+## Fundamento teórico de SVM.
+
+Las Máquinas de Soporte Vectorial (SVM) son algoritmos de clasificación supervisada cuyo objetivo es encontrar el hiperplano óptimo que maximiza la separación entre clases.
+
+En un problema lineal, el hiperplano puede representarse mediante:
+
+$$
+w^Tx + b = 0
+$$
+
+donde:
+
+- $w$ representa el vector normal al hiperplano,
+- $x$ representa las variables predictoras,
+- y $b$ corresponde al sesgo del modelo.
+
+La principal ventaja de SVM es su capacidad para modelar relaciones lineales y no lineales mediante el uso de funciones kernel, permitiendo transformar los datos hacia espacios de mayor dimensionalidad para mejorar la separación entre clases.
+
+## Escalamiento de variables numéricas para SVM.
+
+```{r message=FALSE, warning=FALSE}
+
+# Variables numéricas utilizadas en el modelo
+variables_numericas <- c(
+  "Cantidad",
+  "Precio_Transaccion",
+  "Productos",
+  "Tarifa_Comision",
+  "Mes",
+  "Dia",
+  "Hora",
+  "Minuto",
+  "Cantidad_Abs",
+  "Volumen_Monetario_Log"
+)
+# Escalamiento usando únicamente información del train
+preproc_svm <- preProcess(
+  train_data[, variables_numericas],
+  method = c("center", "scale")
+)
+
+# Aplicar transformación
+train_scaled <- train_data
+test_scaled <- test_data
+
+train_scaled[, variables_numericas] <- predict(
+  preproc_svm,
+  train_data[, variables_numericas]
+)
+
+test_scaled[, variables_numericas] <- predict(
+  preproc_svm,
+  test_data[, variables_numericas]
+)
+```
+
+## GGPAIRS.
+
+```{r warning=FALSE, message=FALSE}
+# Selección de variables numéricas relevantes
+svm_pairs <- trades_ml %>%
+  dplyr::select(
+    Target,
+    Cantidad,
+    Precio_Transaccion,
+    Productos,
+    Tarifa_Comision,
+    Cantidad_Abs,
+    Volumen_Monetario_Log
+  )
+
+# Conversión de target a factor visual
+svm_pairs$Target <- as.factor(svm_pairs$Target)
+
+# Visualización exploratoria
+ggpairs(
+  svm_pairs,
+  aes(color = Target, alpha = 0.4)
+)
+```
+
+Mediante el análisis exploratorio realizado con `ggpairs`, se identificaron variables con capacidad potencial de separación entre trades ganadores y perdedores.
+
+Particularmente, las variables relacionadas con volumen monetario, cantidad operada, precio de transacción y tarifas de comisión mostraron diferencias relevantes entre clases, además de patrones no lineales y agrupamientos parciales observables en distintas combinaciones bidimensionales.
+
+Asimismo, se identificaron correlaciones importantes entre algunas variables operativas, especialmente entre `Cantidad`, `Cantidad_Abs` y `Tarifa_Comision`, lo cual sugiere la existencia de dependencias estructurales dentro de los datos.
+
+Los resultados visuales obtenidos justifican metodológicamente la utilización de modelos SVM con distintos kernels, especialmente kernels no lineales como Polynomial y RBF, capaces de capturar relaciones complejas y fronteras de decisión que no pueden modelarse adecuadamente mediante separaciones lineales simples.
+
+
+## Visualización SVM 2D.
+
+```{r}
+# MODELO SVM 2D
+svm_2d <- svm(
+  Target ~ Cantidad_Abs + Volumen_Monetario_Log,
+  data = train_scaled,
+  kernel = "linear",
+  scale = FALSE
+)
+
+plot(
+  svm_2d,
+  train_scaled,
+  Cantidad_Abs ~ Volumen_Monetario_Log,
+  main = "SVM 2D - Hiperplano de Separación"
+)
+```
+
+
+## Visualización 3D.
+
+En un espacio tridimensional, el hiperplano de separación deja de representarse mediante una línea y pasa a modelarse como un plano en tres dimensiones. Este enfoque permite observar de manera más realista cómo el algoritmo SVM construye fronteras de decisión utilizando múltiples variables simultáneamente.
+
+```{r warning=FALSE, message=FALSE}
+
+# SVM 3D
+modelo_svm_3d <- svm(
+  Target ~ Cantidad_Abs +
+    Volumen_Monetario_Log +
+    Precio_Transaccion,
+  data = train_scaled,
+  kernel = "linear",
+  scale = FALSE
+)
+
+summary(modelo_svm_3d)
+
+# VISUALIZACIÓN 3D 
+library(plotly)
+# Vectores de soporte
+sv_data <- train_scaled[modelo_svm_3d$index, ]
+
+plot_ly() %>%
+
+  # Observaciones normales
+  add_markers(
+    data = train_scaled,
+
+    x = ~Cantidad_Abs,
+    y = ~Volumen_Monetario_Log,
+    z = ~Precio_Transaccion,
+
+    color = ~Target,
+
+    colors = c("salmon", "steelblue"),
+
+    marker = list(
+      size = 3,
+      opacity = 0.6
+    )
+  ) %>%
+
+  # Vectores de soporte
+  add_markers(
+    data = sv_data,
+
+    x = ~Cantidad_Abs,
+    y = ~Volumen_Monetario_Log,
+    z = ~Precio_Transaccion,
+
+    color = ~Target,
+
+    colors = c("salmon", "steelblue"),
+
+    marker = list(
+      size = 6,
+      opacity = 1,
+
+      line = list(
+        color = "black",
+        width = 2
+      )
+    )
+  )
+```
+
+## Interpretación visual.
+
+Las visualizaciones bidimensionales y tridimensionales permitieron analizar gráficamente la estructura espacial de las observaciones utilizadas en los modelos SVM.
+
+En el espacio bidimensional se observó una superposición considerable entre las clases, así como patrones curvos y relaciones no lineales entre variables como `Cantidad_Abs` y `Volumen_Monetario_Log`. Esto evidencia que las observaciones no pueden separarse adecuadamente mediante fronteras lineales simples.
+
+Por otro lado, la representación tridimensional mostró una estructura aún más compleja, caracterizada por concentraciones irregulares, trayectorias curvas y regiones parcialmente mezcladas entre clases. La interacción simultánea entre `Cantidad_Abs`, `Volumen_Monetario_Log` y `Precio_Transaccion` permitió identificar dependencias multidimensionales relevantes dentro de los datos bursátiles.
+
+Adicionalmente, el elevado número de vectores de soporte utilizados por el modelo refleja la complejidad inherente del problema de clasificación y la necesidad de utilizar múltiples observaciones críticas para construir fronteras de decisión estables.
+
+En conjunto, estas visualizaciones respaldan metodológicamente el uso de kernels no lineales como Polynomial y RBF, los cuales demostraron una mayor capacidad para modelar relaciones complejas presentes en los trades bursátiles.
+
+
+## Justificación de variables utilizadas.
+
+Las variables utilizadas en las visualizaciones bidimensionales y tridimensionales fueron seleccionadas con base en su relevancia operativa, financiera y capacidad potencial de separación observada durante el análisis exploratorio de datos.
+
+En particular, `Cantidad_Abs` representa la magnitud efectiva de las operaciones bursátiles, mientras que `Volumen_Monetario_Log` captura el impacto monetario de las transacciones bajo una transformación logarítmica que reduce asimetrías y estabiliza la dispersión de los datos. Ambas variables mostraron patrones no lineales, correlaciones relevantes y diferencias parciales entre clases dentro del análisis exploratorio realizado mediante `ggpairs`.
+
+Adicionalmente, en la visualización tridimensional se incorporó la variable `Precio_Transaccion`, ya que permite representar simultáneamente el nivel de precio al cual se ejecutan las operaciones y analizar interacciones multidimensionales entre tamaño de operación, volumen monetario y precio del activo.
+
+La combinación de estas variables permitió observar estructuras complejas, regiones parcialmente separables y patrones no lineales consistentes con la lógica de funcionamiento de modelos SVM con kernels no lineales.
+
+## Modelos SVM.
+
+```{r}
+### SVM Lineal
+# El kernel lineal busca separar las clases mediante un hiperplano lineal en el espacio original de variables.
+set.seed(123)
+# 1. Entrenamiento SVM lineal
+modelo_svm_linear <- svm(
+  formula_modelo,
+  data = train_scaled,
+  kernel = "linear",
+  probability = TRUE
+)
+
+# 2. Predicciones
+pred_svm_linear <- predict(
+  modelo_svm_linear,
+  newdata = test_scaled,
+  probability = TRUE
+)
+
+# 3. Matriz de confusión
+cm_linear <- confusionMatrix(
+  pred_svm_linear,
+  test_scaled$Target
+)
+
+cm_linear
+
+# 4. Probabilidades para ROC
+prob_svm_linear <-
+  attr(pred_svm_linear, "probabilities")[,2]
+
+# 5. ROC y AUC
+roc_svm_linear <- roc(
+  response = test_scaled$Target,
+  predictor = prob_svm_linear
+)
+
+auc(roc_svm_linear)
+
+plot(
+  roc_svm_linear,
+  col = "red",
+  main = "ROC - SVM Lineal"
+)
+
+cat(
+  "Número de vectores de soporte:",
+  length(modelo_svm_linear$index)
+)
+
+### SVM Polinomial
+# El kernel polinomial permite modelar relaciones no lineales
+# mediante transformaciones polinomiales del espacio de características.
+modelo_svm_poly <- svm(
+  formula_modelo,
+  data = train_scaled,
+  kernel = "polynomial",
+  probability = TRUE
+)
+
+pred_svm_poly <- predict(
+  modelo_svm_poly,
+  newdata = test_scaled,
+  probability = TRUE
+)
+
+cm_poly <- confusionMatrix(
+  pred_svm_poly,
+  test_scaled$Target
+)
+
+cm_poly
+
+prob_svm_poly <-
+  attr(pred_svm_poly, "probabilities")[,2]
+
+roc_svm_poly <- roc(
+  response = test_scaled$Target,
+  predictor = prob_svm_poly
+)
+
+auc(roc_svm_poly)
+
+plot(
+  roc_svm_poly,
+  col = "brown",
+  main = "ROC - SVM Polinomial"
+)
+
+cat(
+  "Número de vectores de soporte:",
+  length(modelo_svm_poly$index)
+)
+
+### SVM Radial (RBF)
+# El kernel radial base function (RBF) permite capturar relaciones altamente no lineales mediante funciones gaussianas locales.
+# 6. Entrenamiento SVM radial
+modelo_svm_rbf <- svm(
+  formula_modelo,
+  data = train_scaled,
+  kernel = "radial",
+  probability = TRUE
+)
+
+# 7. Predicciones
+pred_svm_rbf <- predict(
+  modelo_svm_rbf,
+  newdata = test_scaled,
+  probability = TRUE
+)
+
+# 8. Matriz de confusión
+cm_rbf <- confusionMatrix(
+  pred_svm_rbf,
+  test_scaled$Target
+)
+
+cm_rbf
+
+# 9. Probabilidades para ROC
+prob_svm_rbf <-
+  attr(pred_svm_rbf, "probabilities")[,2]
+
+# 10. ROC y AUC
+roc_svm_rbf <- roc(
+  response = test_scaled$Target,
+  predictor = prob_svm_rbf
+)
+
+auc(roc_svm_rbf)
+
+plot(
+  roc_svm_rbf,
+  col = "darkgreen",
+  main = "ROC - SVM RBF"
+)
+
+cat(
+  "Número de vectores de soporte:",
+  length(modelo_svm_rbf$index)
+)
+
+# COMPARACIÓN DE MODELOS
+# 11. Tabla comparativa
+resultados <- data.frame(
+  Modelo = c(
+    "Logística Completa",
+    "Logística Reducida",
+    "Logística Interacción",
+    "SVM Lineal",
+    "SVM Polinomial",
+    "SVM RBF"
+  ),
+
+  Accuracy = c(
+    NA,
+    NA,
+    NA,
+    cm_linear$overall["Accuracy"],
+    cm_poly$overall["Accuracy"],
+    cm_rbf$overall["Accuracy"]
+  ),
+
+  AUC = c(
+    auc(roc_logit_1),
+    auc(roc_logit_2),
+    auc(roc_logit_3),
+    auc(roc_svm_linear),
+    auc(roc_svm_poly),
+    auc(roc_svm_rbf)
+  ),
+
+  Vectores_Soporte = c(
+    NA,
+    NA,
+    NA,
+    length(modelo_svm_linear$index),
+    length(modelo_svm_poly$index),
+    length(modelo_svm_rbf$index)
+  )
+
+)
+
+resultados
+
+# CURVAS ROC COMPARATIVAS
+plot(
+  roc_logit_1,
+  col = "blue",
+  lwd = 2,
+  main = "Comparación de Curvas ROC"
+)
+lines(
+  roc_logit_2,
+  col = "purple",
+  lwd = 2
+)
+lines(
+  roc_logit_3,
+  col = "orange",
+  lwd = 2
+)
+lines(
+  roc_svm_linear,
+  col = "red",
+  lwd = 2
+)
+lines(
+  roc_svm_poly,
+  col = "brown",
+  lwd = 2
+)
+
+lines(
+  roc_svm_rbf,
+  col = "darkgreen",
+  lwd = 2
+)
+legend(
+  "bottomright",
+  legend = c(
+    "Logit Completo",
+    "Logit Reducido",
+    "Logit Interacción",
+    "SVM Lineal",
+    "SVM Polinomial",
+    "SVM RBF"
+  ),
+
+  col = c(
+    "blue",
+    "purple",
+    "orange",
+    "red",
+    "brown",
+    "darkgreen"
+  ),
+
+  lwd = 2
+)
+```
+
+
+### Conclusión de Modelos SVM.
+
+Los resultados obtenidos muestran diferencias importantes entre los distintos kernels evaluados. El modelo SVM Polinomial alcanzó los mejores indicadores predictivos dentro de esta familia, obteniendo un Accuracy aproximado de 74.36% y un AUC de 0.8301. Sin embargo, este desempeño se acompañó de un número considerablemente elevado de vectores de soporte (2826), reflejando una mayor complejidad estructural y una posible menor capacidad de generalización sobre datos no observados.
+
+Por su parte, el modelo SVM con kernel radial (RBF) presentó un Accuracy aproximado de 70.87% y un AUC de 0.7565, manteniendo un desempeño competitivo con una cantidad sustancialmente menor de vectores de soporte (1073). Esta característica sugiere una representación más parsimoniosa de las fronteras de decisión y un mejor equilibrio entre capacidad predictiva, complejidad del modelo e interpretabilidad operativa.
+
+Por esta razón, aunque el kernel polinomial obtuvo las métricas más elevadas dentro de los modelos SVM, el modelo RBF fue seleccionado como representante de esta familia para la comparación final entre metodologías, al ofrecer una solución más equilibrada y potencialmente más robusta desde la perspectiva de generalización.
+
+
+# Árboles de decisión.
+
+## Fundamento teórico.
+
+Los árboles de decisión son algoritmos de aprendizaje supervisado utilizados para problemas de clasificación y regresión. Su funcionamiento consiste en dividir recursivamente el espacio de variables predictoras mediante reglas de decisión que buscan separar de la mejor manera posible las observaciones pertenecientes a distintas clases.
+
+Cada árbol está compuesto por un nodo raíz, nodos internos de decisión y nodos terminales u hojas. Durante el entrenamiento, el algoritmo evalúa múltiples divisiones posibles y selecciona aquellas que generan subconjuntos más homogéneos respecto a la variable objetivo.
+
+Uno de los criterios más utilizados para construir árboles de clasificación es el Índice de Gini, el cual mide el nivel de impureza de un nodo. Valores cercanos a cero indican nodos más puros, mientras que valores elevados reflejan una mezcla importante entre clases. El algoritmo busca minimizar la impureza en cada división para mejorar la capacidad de clasificación del árbol.
+
+Una ventaja importante de los árboles de decisión es su interpretabilidad, ya que permiten identificar de forma explícita las reglas que conducen a una determinada predicción. Sin embargo, árboles excesivamente complejos pueden presentar sobreajuste, por lo que posteriormente se analizarán estrategias de control de profundidad y poda.
+
+
+## Árbol de decisión con índice de Gini.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(123)
+library(rpart)
+library(rpart.plot)
+
+# ÁRBOL DE DECISIÓN - ÍNDICE DE GINI
+arbol_gini <- rpart(
+  formula_modelo,
+  data = train_data,
+  method = "class",
+  parms = list(split = "gini")
+)
+
+# Resumen del árbol
+summary(arbol_gini)
+
+# Visualización
+rpart.plot(
+  arbol_gini,
+  type = 2,
+  extra = 104,
+  fallen.leaves = TRUE,
+  main = "Árbol de Decisión - Índice de Gini"
+)
+
+# Predicciones
+pred_gini <- predict(
+  arbol_gini,
+  newdata = test_data,
+  type = "class"
+)
+
+# Matriz de confusión
+confusionMatrix(
+  pred_gini,
+  test_data$Target
+)
+
+# Probabilidades para ROC
+prob_gini <- predict(
+  arbol_gini,
+  newdata = test_data,
+  type = "prob"
+)[,2]
+
+# Curva ROC
+roc_gini <- roc(
+  response = test_data$Target,
+  predictor = prob_gini
+)
+
+# AUC
+auc(roc_gini)
+
+# Visualización ROC
+plot(
+  roc_gini,
+  col = "darkblue",
+  lwd = 2,
+  main = "ROC - Árbol Gini"
+)
+```
+
+## Conclusión del árbol de decisión con índice de Gini.
+
+Se construyó un árbol de clasificación utilizando el índice de Gini como criterio de partición, con el objetivo de identificar patrones asociados a la dirección de los trades bursátiles. El algoritmo seleccionó automáticamente las variables que generan la mayor reducción de impureza en cada nodo, produciendo una estructura jerárquica de reglas fácilmente interpretable.
+
+La importancia de variables mostró que *Productos*, *Cantidad*, *Dirección* y *Código* fueron los predictores con mayor capacidad discriminante dentro del árbol, mientras que variables temporales como *Mes*, *Minuto* y *Día de la Semana* también participaron en diversas particiones relevantes. Esto confirma que tanto las características operativas como las temporales contienen información útil para explicar el comportamiento de las operaciones.
+
+La primera división del árbol se realizó sobre la variable *Productos*, indicando que esta característica representa la fuente inicial de información más relevante para separar las observaciones. A partir de ella, el modelo incorporó reglas sucesivas basadas en símbolos bursátiles, momentos de ejecución y precios de transacción, generando nodos terminales con elevados niveles de pureza. En varios segmentos se alcanzaron probabilidades superiores al 99% para una de las clases, evidenciando que existen grupos específicos de operaciones con comportamientos altamente diferenciados.
+
+La curva ROC obtenida presentó un área bajo la curva (AUC) de aproximadamente 0.642, valor superior al desempeño esperado por azar (AUC = 0.50). Esto indica que el árbol posee capacidad predictiva para distinguir entre operaciones ganadoras y perdedoras, aunque dicha capacidad resulta moderada en comparación con otros modelos evaluados previamente.
+
+En conjunto, los resultados muestran que el árbol basado en índice de Gini constituye una herramienta interpretable para identificar reglas de decisión y comprender los factores asociados a la dirección de los trades. Sin embargo, la naturaleza jerárquica de las particiones limita parcialmente su capacidad para capturar relaciones complejas presentes en los datos, lo que explica su desempeño inferior respecto a modelos más flexibles como las Máquinas de Soporte Vectorial y algunas variantes de regresión logística.
+
+
+
+## Árbol de decisión: Ganancia de información.
+
+Además del índice de Gini, los árboles de clasificación pueden construirse utilizando la entropía como medida de impureza. Este enfoque selecciona en cada nodo la partición que maximiza la reducción de incertidumbre, conocida como ganancia de información (*Information Gain*).
+
+El objetivo es evaluar si este criterio produce reglas de decisión más efectivas para clasificar la dirección de los trades bursátiles y comparar posteriormente su desempeño frente al árbol basado en índice de Gini.
+
+```{r warning=FALSE, message=FALSE}
+set.seed(123)
+# Árbol de decisión con Ganancia de Información
+library(rpart)
+library(rpart.plot)
+library(pROC)
+
+arbol_info <- rpart(
+  formula = formula_modelo,
+  data = train_data,
+  method = "class",
+  parms = list(split = "information")
+)
+
+summary(arbol_info)
+
+rpart.plot(
+  arbol_info,
+  type = 4,
+  extra = 104,
+  fallen.leaves = TRUE,
+  main = "Árbol de Decisión - Ganancia de Información"
+)
+
+pred_info <- predict(
+  arbol_info,
+  newdata = test_data,
+  type = "prob"
+)
+
+roc_info <- roc(
+  response = test_data$Target,
+  predictor = pred_info[,2]
+)
+
+plot(
+  roc_info,
+  col = "darkred",
+  lwd = 2,
+  main = "ROC - Árbol Information Gain"
+)
+auc(roc_info)
+```
+
+###  Conclusión del árbol de decisión mediante Ganancia de información.
+
+El árbol de decisión construido mediante Ganancia de Información identificó patrones muy similares a los obtenidos con el criterio de Índice de Gini. Las variables con mayor capacidad discriminante fueron Productos, Cantidad, Dirección, Código y Símbolo, reflejando la relevancia de las características propias del instrumento financiero para explicar la dirección de los trades. Asimismo, variables temporales como día de la semana, mes y minuto aportaron capacidad predictiva adicional en niveles posteriores del árbol. La estructura generada produjo nodos terminales con altos niveles de pureza, evidenciando la existencia de segmentos específicos de operaciones con comportamientos consistentes. No obstante, el desempeño predictivo evaluado mediante el área bajo la curva ROC alcanzó un valor de 0.6231, inferior al obtenido con el árbol basado en Índice de Gini (AUC = 0.6415). Por lo tanto, aunque ambos criterios capturan una estructura similar de los datos, el criterio Gini mostró una ligera ventaja en términos de capacidad de discriminación sobre datos no observados.
+
+## Árbol de decisión con máxima profundidad.
+
+Con el objetivo de controlar la complejidad del modelo y mejorar su interpretabilidad, se construyó un árbol de decisión restringiendo explícitamente la profundidad máxima de crecimiento. Esta estrategia limita el número de particiones sucesivas permitidas, generando estructuras más compactas y reduciendo el riesgo de sobreajuste asociado a árboles excesivamente profundos.
+
+```{r warning=FALSE, message=FALSE}
+set.seed(123)
+# Árbol con profundidad máxima controlada
+arbol_maxdepth <- rpart(
+  formula_modelo,
+  data = train_data,
+  method = "class",
+  parms = list(split = "gini"),
+  control = rpart.control(
+    maxdepth = 3,
+    cp = 0.001
+  )
+)
+summary(arbol_maxdepth)
+# Visualización del árbol
+rpart.plot(
+  arbol_maxdepth,
+  type = 4,
+  extra = 104,
+  fallen.leaves = TRUE,
+  main = "Árbol de Decisión - Máxima Profundidad"
+)
+# Predicciones
+pred_maxdepth <- predict(
+  arbol_maxdepth,
+  newdata = test_data,
+  type = "class"
+)
+table(
+  Real = test_data$Target,
+  Predicho = pred_maxdepth
+)
+# Matriz de confusión
+conf_maxdepth <- confusionMatrix(
+  pred_maxdepth,
+  test_data$Target
+)
+conf_maxdepth
+# Curva ROC
+prob_maxdepth <- predict(
+  arbol_maxdepth,
+  newdata = test_data,
+  type = "prob"
+)[,2]
+roc_maxdepth <- roc(
+  test_data$Target,
+  prob_maxdepth
+)
+plot(
+  roc_maxdepth,
+  col = "darkgreen",
+  lwd = 2,
+  main = "ROC - Árbol Máxima Profundidad"
+)
+abline(a = 0, b = 1, col = "gray")
+auc(roc_maxdepth)
+```
+
+## Conclusión del árbol de decisión con máxima profundidad.
+
+El árbol de decisión construido con restricción de profundidad máxima permitió obtener una estructura significativamente más simple e interpretable que los árboles generados mediante Índice de Gini y Ganancia de Información. Las variables con mayor relevancia fueron Cantidad, Productos, Dirección, Código y Símbolo, confirmando que las características del instrumento financiero constituyen los principales determinantes de la dirección de los trades. La reducción de complejidad permitió concentrar el proceso de decisión en las particiones más informativas, generando nodos terminales con elevados niveles de pureza y reglas de clasificación fácilmente interpretables. En la evaluación sobre el conjunto de prueba, el modelo alcanzó una exactitud de 67.06%, una sensibilidad de 64.74%, una especificidad de 71.95% y un Balanced Accuracy de 68.34%, mostrando un desempeño relativamente equilibrado entre ambas clases. Asimismo, el área bajo la curva ROC fue de 0.7007, superando los resultados obtenidos por los árboles basados en Índice de Gini (0.6415) y Ganancia de Información (0.6231). En conjunto, estos resultados sugieren que la limitación de profundidad favoreció la capacidad de generalización del modelo al reducir el sobreajuste y conservar únicamente las divisiones con mayor poder predictivo, convirtiéndolo en el árbol con mejor desempeño de los evaluados hasta este punto del análisis.
+
+
+
+## Árbol de decisión con validación cruzada y poda.
+
+Con el objetivo de obtener un árbol con mejor capacidad de generalización, se aplicó validación cruzada para identificar el nivel óptimo de complejidad y posteriormente se realizó una poda del árbol. Este procedimiento permite eliminar particiones poco informativas, reduciendo el riesgo de sobreajuste y favoreciendo la estabilidad predictiva del modelo sobre datos no observados.
+
+```{r warning=FALSE, message=FALSE}
+set.seed(123)
+arbol_cv <- rpart(
+  formula_modelo,
+  data = train_data,
+  method = "class",
+  parms = list(split = "gini")
+)
+summary(arbol_cv)
+```
+```{r}
+# Tabla CP
+printcp(arbol_cv)
+```
+```{r}
+#Gráfica de validación cruzada
+plotcp(arbol_cv)
+```
+
+Se seleccionó automáticamente el valor de complejidad (*Complexity Parameter, CP*) que minimiza el error estimado mediante validación cruzada.
+
+```{r}
+cp_optimo <- arbol_cv$cptable[
+  which.min(arbol_cv$cptable[, "xerror"]),
+  "CP"
+]
+cp_optimo
+```
+
+```{r}
+set.seed(123)
+# Poda del árbol
+arbol_podado <- prune(
+  arbol_cv,
+  cp = cp_optimo
+)
+summary(arbol_podado)
+```
+
+```{r fig.width=12, fig.height=8}
+# Visualización del árbol podado
+rpart.plot(
+  arbol_podado,
+  type = 4,
+  extra = 104,
+  fallen.leaves = TRUE,
+  main = "Árbol de Decisión Podado"
+)
+```
+```{r}
+# Predicciones
+pred_podado <- predict(
+  arbol_podado,
+  newdata = test_data,
+  type = "class"
+)
+table(
+  Real = test_data$Target,
+  Predicho = pred_podado
+)
+```
+
+```{r}
+# Matriz de confusión
+conf_podado <- confusionMatrix(
+  pred_podado,
+  test_data$Target
+)
+conf_podado
+```
+
+```{r}
+# Curva ROC y AUC
+prob_podado <- predict(
+  arbol_podado,
+  newdata = test_data,
+  type = "prob"
+)[,2]
+roc_podado <- roc(
+  test_data$Target,
+  prob_podado
+)
+plot(
+  roc_podado,
+  col = "purple",
+  lwd = 2,
+  main = "ROC - Árbol Podado"
+)
+abline(a = 0, b = 1, col = "gray")
+auc(roc_podado)
+```
+
+### Conclusión del árbol podado mediante validación cruzada.
+
+La aplicación de validación cruzada permitió identificar un parámetro de complejidad óptimo de CP = 0.01, correspondiente al menor error de validación observado dentro de la tabla CP. Este procedimiento tuvo como objetivo reducir el riesgo de sobreajuste eliminando particiones que aportaban poca información predictiva y conservando únicamente aquellas con una contribución significativa al proceso de clasificación. Como resultado se obtuvo un árbol más interpretable y estructurado, capaz de resumir las relaciones más relevantes presentes en los datos.
+
+El análisis de importancia de variables mostró que Productos, Cantidad, Dirección, Código y Símbolo continúan siendo los atributos con mayor influencia en la construcción del modelo, confirmando los patrones observados en los árboles evaluados previamente. La estructura final evidencia que la primera segmentación se realiza a partir del número de productos involucrados en la operación, mientras que variables asociadas al instrumento financiero operado, particularmente el símbolo bursátil, dominan gran parte de las decisiones posteriores. De manera complementaria, variables temporales como día de la semana, mes y minuto de ejecución, así como el precio de transacción, contribuyen a refinar ciertas regiones específicas del árbol, sugiriendo que tanto las características de mercado como el contexto temporal tienen influencia sobre el resultado de las operaciones.
+
+Desde la perspectiva predictiva, la matriz de confusión mostró un desempeño moderado. El modelo clasificó correctamente 417 observaciones pertenecientes a la clase 0 y 145 observaciones de la clase 1, pero presentó una cantidad considerable de errores de clasificación, particularmente falsos positivos (224) y falsos negativos (158). Esto se refleja en una exactitud global de 59.53%, inferior incluso a la proporción de la clase mayoritaria presente en los datos (67.9%). Adicionalmente, el coeficiente Kappa de 0.1221 indica un nivel bajo de acuerdo entre las predicciones y los valores reales más allá de lo esperado por azar. La sensibilidad de 65.05% muestra que el modelo identifica una proporción razonable de observaciones positivas, mientras que la especificidad de 47.85% evidencia dificultades para reconocer correctamente la clase contraria. La exactitud balanceada de 56.45% confirma que el rendimiento general del clasificador es limitado cuando ambas clases son consideradas de manera simultánea.
+
+La evaluación mediante la curva ROC complementa este diagnóstico. El valor AUC obtenido fue de 0.6415, indicando que el modelo posee cierta capacidad para distinguir entre operaciones exitosas y no exitosas, aunque dicha capacidad permanece en un nivel moderado. En términos prácticos, esto implica que el árbol asigna una probabilidad mayor al caso correcto aproximadamente en el 64% de las comparaciones entre observaciones de clases distintas. Si bien este resultado supera claramente el comportamiento aleatorio, aún se encuentra lejos de los niveles de discriminación considerados robustos para aplicaciones predictivas exigentes.
+
+En conjunto, los resultados permiten concluir que la validación cruzada logró cumplir su objetivo principal de controlar la complejidad del árbol y producir un modelo más estable e interpretable. No obstante, la simplificación obtenida no se tradujo en una mejora del desempeño predictivo sobre los datos de prueba. Aunque el modelo conserva patrones relevantes asociados principalmente con los instrumentos financieros negociados, la cantidad de productos operados y ciertas condiciones temporales del mercado, su capacidad de generalización resulta moderada y permanece por debajo de la alcanzada por otras variantes de árboles analizadas previamente. Por tanto, este enfoque representa una alternativa adecuada desde el punto de vista de la interpretabilidad y el control del sobreajuste, pero no constituye la mejor opción cuando el objetivo principal es maximizar la precisión predictiva de las operaciones bursátiles.
+
+## Conclusión global de los modelos de árboles de decisión.
+
+Con el propósito de identificar patrones asociados al éxito o fracaso de las operaciones bursátiles, se construyeron y evaluaron cuatro variantes de árboles de decisión: un árbol basado en el índice Gini, un árbol basado en Ganancia de Información (Information Gain), un árbol con restricción de profundidad máxima y un árbol podado mediante validación cruzada. Cada uno de estos enfoques permitió analizar la influencia de las variables explicativas desde diferentes perspectivas de partición y complejidad estructural.
+
+De manera consistente, todos los modelos identificaron a las variables relacionadas con el instrumento financiero operado y las características de la transacción como los factores más relevantes para la clasificación. En particular, variables como Productos, Símbolo, Cantidad, Dirección y, en menor medida, variables temporales como Día de la Semana, Mes, Hora y Minuto, aparecieron repetidamente en las primeras divisiones de los árboles. Este comportamiento sugiere que el resultado de una operación no depende únicamente de condiciones temporales del mercado, sino también de las características específicas del activo negociado y del tamaño o dirección de la transacción.
+
+Desde el punto de vista predictivo, los resultados mostraron diferencias importantes entre los modelos evaluados. Los árboles construidos con índice Gini e Information Gain alcanzaron niveles de exactitud similares (67.06%), aunque el modelo basado en Ganancia de Información presentó una capacidad de discriminación ligeramente superior, reflejada en un AUC de 0.6415 frente al 0.6231 obtenido con Gini. Esto indica que, aun cuando ambos modelos generan porcentajes de clasificación correctos equivalentes, el criterio de Ganancia de Información logra ordenar mejor las observaciones según su probabilidad de pertenecer a cada clase.
+
+El mejor desempeño general se observó en el árbol con restricción de profundidad máxima. Este modelo alcanzó el valor de AUC más elevado de todos los árboles analizados (0.7007), superando claramente a las demás variantes en términos de capacidad de discriminación. Además, mantuvo niveles de exactitud comparables a los modelos anteriores, lo que indica que la incorporación de una estructura más profunda permitió capturar relaciones adicionales presentes en los datos sin deteriorar significativamente la estabilidad de las predicciones. Este resultado sugiere que existen interacciones entre variables que requieren múltiples niveles de segmentación para ser adecuadamente representadas.
+
+Por otra parte, el árbol podado mediante validación cruzada cumplió satisfactoriamente con su objetivo de reducir la complejidad estructural y controlar el riesgo de sobreajuste. Sin embargo, esta simplificación tuvo un costo importante en términos predictivos. La exactitud descendió hasta 59.53%, el valor de Kappa fue considerablemente menor y el AUC se mantuvo en un nivel moderado de 0.6415. Aunque el modelo resultó más sencillo de interpretar y potencialmente más estable frente a variaciones en los datos de entrenamiento, su capacidad para generalizar correctamente sobre nuevas observaciones fue inferior a la observada en los modelos más complejos.
+
+En conjunto, los resultados muestran que los árboles de decisión constituyen una herramienta útil para identificar patrones relevantes y comprender los factores que influyen en el comportamiento de las operaciones bursátiles. Su principal fortaleza radica en la interpretabilidad de las reglas generadas y en la facilidad para identificar variables determinantes dentro del proceso de clasificación. No obstante, los niveles de desempeño obtenidos sugieren que las relaciones presentes en los datos poseen una complejidad que difícilmente puede ser capturada por un único árbol de decisión.
+
+Considerando simultáneamente la exactitud, la capacidad de discriminación y la estabilidad observada en las métricas de evaluación, el árbol con profundidad máxima se posiciona como la mejor alternativa dentro de los modelos analizados, al presentar el mayor AUC y la mejor capacidad para distinguir entre operaciones exitosas y no exitosas. Sin embargo, los resultados también indican que existe margen considerable de mejora, por lo que resulta razonable explorar técnicas basadas en ensamblajes de árboles, como Random Forest o Gradient Boosting, capaces de capturar relaciones no lineales y patrones más complejos que los identificados por los árboles individuales evaluados en este estudio.
+
+
+# Bosques Aleatorios (Random Forest).
+
+Los Bosques Aleatorios (Random Forest) son modelos de aprendizaje supervisado basados en múltiples árboles de decisión entrenados sobre subconjuntos aleatorios de datos y variables predictoras. Su objetivo principal es reducir el sobreajuste presente en árboles individuales y mejorar la capacidad de generalización del modelo.
+Cada árbol realiza una predicción independiente y el bosque determina la clase final mediante votación mayoritaria.
+Random Forest destaca por:
+- Capturar relaciones no lineales.
+- Manejar interacciones complejas entre variables.
+- Reducir el overfitting.
+- Permitir el cálculo de importancia de variables.
+- Funcionar adecuadamente con variables numéricas y categóricas.
+Además, el modelo incorpora hiperparámetros importantes como el número de árboles (ntree) y el número de variables evaluadas en cada división (mtry), los cuales influyen directamente en el desempeño predictivo del modelo.
+
+## MODELO BASE DE 500 ÁRBOLES.
+
+```{r}
+set.seed(123)
+# Alinear factores entre train y test
+variables_factor <- c(
+  "Simbolo",
+  "Codigo",
+  "Direccion",
+  "Dia_Semana",
+  "Franja_Horaria",
+  "Target"
+)
+for(v in variables_factor){
+  test_data[[v]] <- factor(
+    test_data[[v]],
+    levels = levels(train_data[[v]])
+  )
+}
+
+train_data$Target <- relevel(train_data$Target, ref = "1")
+test_data$Target <- relevel(test_data$Target, ref = "1")
+
+## RANDOM FOREST BASE
+library(randomForest)
+library(caret)
+library(pROC)
+# Entrenamiento
+modelo_rf_1 <- randomForest(
+  Target ~ .,
+  data = train_data,
+  ntree = 500,
+  importance = TRUE
+)
+# Resumen del modelo
+print(modelo_rf_1)
+# Predicciones
+pred_rf_1 <- predict(
+  modelo_rf_1,
+  newdata = test_data
+)
+# Probabilidades
+prob_rf_1 <- predict(
+  modelo_rf_1,
+  newdata = test_data,
+  type = "prob"
+)[,2]
+# Matriz de confusión
+confusionMatrix(
+  pred_rf_1,
+  test_data$Target
+)
+
+# ROC y AUC
+roc_rf_1 <- roc(
+  response = test_data$Target,
+  predictor = prob_rf_1
+)
+auc(roc_rf_1)
+plot(
+  roc_rf_1,
+  col = "darkgreen",
+  main = "ROC - Random Forest Base"
+)
+```
+
+## Interpretación modelo Random Forest base.
+
+El modelo Random Forest base, construido con 500 árboles, presentó una exactitud (Accuracy) de 66.95%, lo que refleja un desempeño moderado en la clasificación de las observaciones del conjunto de prueba. No obstante, este valor es ligeramente inferior al No Information Rate (67.9%), lo que indica que aún existe margen de mejora mediante el ajuste de hiperparámetros.
+
+El AUC obtenido fue de 0.7599, evidenciando una capacidad de discriminación aceptable entre clases. La curva ROC se mantiene por encima de la línea aleatoria, lo que confirma que el modelo logra diferenciar adecuadamente entre observaciones positivas y negativas.
+
+En cuanto al rendimiento por clase, la sensibilidad fue de 28.38%, lo que refleja dificultades importantes para identificar correctamente los casos positivos. Por el contrario, la especificidad alcanzó 85.18%, mostrando un mejor desempeño en la clasificación de la clase negativa. Este comportamiento evidencia un sesgo hacia la clase mayoritaria, común en escenarios con desbalance de clases.
+
+El coeficiente Kappa de 0.1517 indica una baja concordancia entre predicciones y valores reales más allá del azar, mientras que la Balanced Accuracy de 56.78% confirma un desempeño no equilibrado entre ambas clases.
+Respecto a la matriz de confusión, los verdaderos positivos (TP = 86) y los verdaderos negativos (TN = 546) representan las clasificaciones correctas del modelo, mientras que los falsos positivos (FP = 95) y falsos negativos (FN = 217) reflejan los errores de predicción. En particular, la elevada cantidad de falsos negativos impacta directamente en la baja sensibilidad, lo que resulta crítico en el contexto del problema al implicar la no detección de casos positivos relevantes.
+
+En términos generales, el Random Forest muestra una capacidad predictiva aceptable y una adecuada modelación de relaciones no lineales. Sin embargo, los resultados sugieren que el desempeño podría mejorar mediante ajustes adicionales en hiperparámetros como nodesize, técnicas de balanceo de clases o selección de variables, con el fin de mejorar la detección de la clase positiva y lograr un desempeño más equilibrado.
+
+## Random forest - Ajuste de mtry.
+
+```{r}
+set.seed(123)
+modelo_rf_2 <- randomForest(
+  Target ~ .,
+  data = train_data,
+  ntree = 500,
+  mtry = 3,
+  importance = TRUE
+)
+
+# Predicciones
+pred_rf_2 <- predict(
+  modelo_rf_2,
+  newdata = test_data
+)
+
+# Probabilidades
+prob_rf_2 <- predict(
+  modelo_rf_2,
+  newdata = test_data,
+  type = "prob"
+)[,2]
+
+# Matriz de confusión
+confusionMatrix(
+  pred_rf_2,
+  test_data$Target
+)
+
+# ROC y AUC
+roc_rf_2 <- roc(
+  response = test_data$Target,
+  predictor = prob_rf_2
+)
+
+auc(roc_rf_2)
+plot(
+  roc_rf_2,
+  col = "blue",
+  main = "ROC - Random Forest mtry = 3"
+)
+```
+
+### Interpretación del ajuste de mtry.
+
+Se realizó el ajuste del hiperparámetro mtry, estableciendo un valor de 3 variables evaluadas en cada división del árbol. Sin embargo, los resultados obtenidos fueron prácticamente idénticos al modelo base, manteniéndose una exactitud de 66.95% y un AUC de 0.7599.
+
+Este comportamiento indica que la modificación de mtry no generó mejoras en la capacidad predictiva del modelo. La sensibilidad se mantuvo baja (28.38%), mientras que la especificidad continuó siendo alta (85.18%), lo que evidencia que el modelo sigue clasificando mejor la clase negativa que la positiva.
+
+Asimismo, el coeficiente Kappa (0.1517) y la Balanced Accuracy (56.78%) reflejan un desempeño moderado y con dificultades para equilibrar adecuadamente ambas clases.
+
+La curva ROC del modelo ajustado con mtry = 3 fue prácticamente igual a la del modelo base, manteniendo un AUC de 0.7599, lo que confirma que no hubo cambios en la capacidad discriminativa del modelo.
+En términos generales, el modelo muestra estabilidad frente a la modificación de este hiperparámetro.
+
+
+## Random Forest - Ajuste de nodesize.
+
+```{r}
+set.seed(123)
+modelo_rf_3 <- randomForest(
+  Target ~ .,
+  data = train_data,
+  ntree = 500,
+  nodesize = 10,
+  importance = TRUE
+)
+
+# Predicciones
+pred_rf_3 <- predict(
+  modelo_rf_3,
+  newdata = test_data
+)
+
+# Probabilidades
+prob_rf_3 <- predict(
+  modelo_rf_3,
+  newdata = test_data,
+  type = "prob"
+)[,2]
+
+# Matriz de confusión
+confusionMatrix(
+  pred_rf_3,
+  test_data$Target
+)
+
+# ROC y AUC
+roc_rf_3 <- roc(
+  response = test_data$Target,
+  predictor = prob_rf_3
+)
+
+auc(roc_rf_3)
+plot(
+  roc_rf_3,
+  col = "red",
+  main = "ROC - Random Forest nodesize = 10"
+)
+```
+
+### Interpretación del ajuste de nodesize.
+
+El ajuste del hiperparámetro nodesize = 10 produjo una ligera mejora en la exactitud del modelo, alcanzando un Accuracy de 68.43%, superior al modelo base. Asimismo, la especificidad aumentó a 89.55%, lo que indica una mayor capacidad para clasificar correctamente la clase negativa.
+
+No obstante, la sensibilidad disminuyó a 23.76%, evidenciando una menor capacidad para detectar correctamente los casos positivos. El AUC fue de 0.7551, ligeramente inferior al modelo base, aunque la curva ROC mantiene un comportamiento estable y una capacidad discriminativa aceptable.
+
+En la matriz de confusión se observan 72 verdaderos positivos (TP) y 574 verdaderos negativos (TN) correctamente clasificados, mientras que los falsos positivos (FP = 67) y falsos negativos (FN = 231) reflejan un aumento en los errores asociados a la clase positiva. Este comportamiento explica la mejora en especificidad, pero también la reducción en sensibilidad, indicando un modelo más conservador en la clasificación de la clase positiva.
+
+En términos generales, el incremento de nodesize genera árboles menos complejos, favoreciendo la clasificación de la clase negativa, pero reduciendo la capacidad de detección de la clase positiva.
+
+## Comparación de modelos random forest.
+
+```{r}
+resultados_rf <- data.frame(
+
+  Modelo = c(
+    "RF Base",
+    "RF mtry",
+    "RF nodesize"
+  ),
+
+  Accuracy = c(
+    confusionMatrix(pred_rf_1, test_data$Target)$overall['Accuracy'],
+    confusionMatrix(pred_rf_2, test_data$Target)$overall['Accuracy'],
+    confusionMatrix(pred_rf_3, test_data$Target)$overall['Accuracy']
+  ),
+
+  Balanced_Accuracy = c(
+    confusionMatrix(pred_rf_1, test_data$Target)$byClass['Balanced Accuracy'],
+    confusionMatrix(pred_rf_2, test_data$Target)$byClass['Balanced Accuracy'],
+    confusionMatrix(pred_rf_3, test_data$Target)$byClass['Balanced Accuracy']
+  ),
+
+  Kappa = c(
+    confusionMatrix(pred_rf_1, test_data$Target)$overall['Kappa'],
+    confusionMatrix(pred_rf_2, test_data$Target)$overall['Kappa'],
+    confusionMatrix(pred_rf_3, test_data$Target)$overall['Kappa']
+  ),
+
+  AUC = c(
+    auc(roc_rf_1),
+    auc(roc_rf_2),
+    auc(roc_rf_3)
+  )
+
+)
+
+resultados_rf
+```
+
+## Conclusión general de los modelos de random forest.
+
+En general, los tres modelos Random Forest presentan un desempeño similar, con valores de Accuracy cercanos al 67–68% y un AUC alrededor de 0.75, lo que indica una capacidad de discriminación aceptable. El modelo RF nodesize obtuvo el mayor valor de Accuracy (0.6843) y el valor más alto de Kappa (0.1553), lo que sugiere una ligera mejora en la clasificación global respecto a los otros modelos. Sin embargo, el modelo RF Base y RF mtry mostraron un AUC ligeramente superior (0.7599), indicando una capacidad un poco mejor para distinguir entre clases. A pesar de estas diferencias, los resultados muestran que las modificaciones en los hiperparámetros (mtry y nodesize) no generaron cambios drásticos en el rendimiento del modelo, aunque el ajuste de nodesize permitió obtener una pequeña mejora en la precisión general del Random Forest.
+
+## Importancia de variables.
+
+```{r}
+importance(modelo_rf_3)
+varImpPlot(
+  modelo_rf_3,
+  main = "Importancia de Variables - Random Forest"
+)
+```
+
+### Análisis de importancia de variables.
+
+Los resultados del Random Forest muestran que la variable más influyente en la predicción es Simbolo, destacando ampliamente tanto en MeanDecreaseAccuracy como en MeanDecreaseGini, lo que indica que su presencia es clave para la correcta clasificación del modelo. En segundo nivel de importancia se encuentran variables como Productos, Cantidad, Precio_Transaccion y Direccion, las cuales también aportan significativamente a la reducción del error y a la mejora de la pureza de los nodos.
+
+Por otro lado, variables como Mes, Dia, Dia_Semana, Hora y Minuto presentan una importancia moderada, lo que sugiere que los patrones temporales influyen en la predicción, aunque no son los principales factores decisivos. Finalmente, variables como Franja_Horaria, Cantidad_Abs y Volumen_Monetario_Log muestran una contribución menor al modelo, indicando que su capacidad explicativa es más limitada en comparación con el resto de predictores.
+
+
+# Conclusiones.
+
+Desarrollamos un análisis comparativo de distintos modelos de aprendizaje supervisado aplicados al estudio de operaciones bursátiles, con el propósito de identificar patrones asociados al comportamiento de los trades y evaluar la capacidad predictiva de diferentes metodologías de Machine Learning. A través de la construcción y evaluación de modelos estadísticos y algoritmos de clasificación, fue posible analizar la influencia de múltiples variables financieras y temporales sobre el resultado de las operaciones, así como comparar el desempeño, interpretabilidad y estabilidad de cada enfoque utilizado. 
+
+## Comparación global de modelos predictivos.
+
+Con el objetivo de identificar el modelo con mejor capacidad para clasificar la dirección de los trades bursátiles, se compararon cuatro enfoques de aprendizaje supervisado: Regresión Logística, Máquinas de Soporte Vectorial (MSV), Árboles de Decisión y Bosques Aleatorios (Random Forest). Para garantizar una evaluación integral, la comparación no se limitó únicamente a la exactitud global del modelo, sino que también incorporó métricas relacionadas con capacidad de discriminación, equilibrio entre clases y estabilidad predictiva, tales como sensibilidad, especificidad, Balanced Accuracy, coeficiente Kappa y área bajo la curva ROC (AUC). La Tabla siguiente resume el desempeño de los mejores modelos seleccionados dentro de cada familia metodológica.
+
+```{r}
+resultados_modelos <- data.frame(
+  Modelo = c(
+    "Regresión Logística",
+    "MSV / SVM",
+    "Árbol de Decisión (MaxDepth)",
+    "Random Forest"
+  ),
+  Accuracy = c(0.7373, 0.7087, 0.6706, 0.6843),
+  Sensibilidad = c(0.6505, 0.6521, 0.6474, 0.2376),
+  Especificidad = c(0.9208, 0.8284, 0.7195, 0.8955),
+  Balanced_Accuracy = c(0.7857, 0.7402, 0.6834, 0.5678),
+  Kappa = c(0.4866, 0.4183, 0.3268, 0.1553),
+  AUC = c(0.7668, 0.7555, 0.7007, 0.7599)
+)
+print(resultados_modelos)
+```
+
+## Comparación del desempeño predictivo.
+
+Los resultados muestran diferencias importantes entre los modelos evaluados. La Regresión Logística presentó el mejor desempeño global, alcanzando la mayor exactitud (73.73%), el mayor valor de Balanced Accuracy (78.57%) y el AUC más alto (0.7668). Estos resultados indican que el modelo no solamente logró clasificar correctamente una proporción elevada de observaciones, sino que además mantuvo un desempeño equilibrado entre ambas clases, aspecto especialmente relevante en problemas con desbalance de categorías. El coeficiente Kappa obtenido por la regresión logística (0.4866) fue también el más alto entre todos los modelos analizados, lo cual evidencia un nivel moderado de concordancia real entre las predicciones y los valores observados más allá del azar. Este resultado es particularmente importante debido a que la exactitud por sí sola puede resultar engañosa en contextos donde existe predominancia de una clase sobre otra. La combinación entre un alto AUC, elevado Balanced Accuracy y mayor Kappa sugiere que la regresión logística logró una capacidad de generalización más estable y consistente que el resto de los modelos.
+
+El modelo MSV presentó igualmente un desempeño competitivo. Con un AUC de 0.7555 y un Balanced Accuracy de 0.7402, las Máquinas de Soporte Vectorial demostraron una capacidad importante para identificar fronteras de separación entre clases. Además, la sensibilidad alcanzada (65.21%) fue muy similar a la observada en la regresión logística, indicando que ambos modelos poseen una capacidad comparable para detectar correctamente operaciones pertenecientes a la clase positiva. Sin embargo, la especificidad del SVM fue considerablemente menor (82.84% frente a 92.08%), lo que refleja una mayor cantidad de falsos positivos y una capacidad inferior para reconocer correctamente la clase negativa. De igual manera, el coeficiente Kappa del SVM (0.4183) fue menor al obtenido por la regresión logística, sugiriendo una menor estabilidad global del modelo.
+
+En el caso de los Árboles de Decisión, el modelo con restricción de profundidad máxima fue el que presentó el mejor comportamiento dentro de esta familia metodológica. El AUC obtenido (0.7007) superó claramente a las demás variantes de árboles evaluadas previamente, lo que indica que la limitación de profundidad permitió reducir parcialmente el sobreajuste presente en estructuras más complejas. Adicionalmente, la sensibilidad (64.74%) y especificidad (71.95%) mostraron un desempeño relativamente equilibrado entre ambas clases. No obstante, los resultados globales permanecieron por debajo de los obtenidos por la regresión logística y el SVM, particularmente en términos de exactitud y capacidad de discriminación. Esto sugiere que, aunque los árboles permiten identificar reglas interpretables dentro del comportamiento bursátil, su estructura jerárquica presenta limitaciones para capturar relaciones complejas entre variables financieras.
+
+Por otra parte, el modelo Random Forest mostró un comportamiento particularmente interesante. El AUC obtenido (0.7599) fue uno de los más altos de todos los modelos evaluados, situándose muy cerca del valor alcanzado por la regresión logística. Esto indica que el bosque aleatorio posee una capacidad adecuada para ordenar observaciones según su probabilidad de pertenecer a cada clase. Sin embargo, el modelo presentó una sensibilidad extremadamente baja (23.76%), acompañada de una especificidad muy elevada (89.55%). Este comportamiento evidencia un sesgo importante hacia la clase mayoritaria, favoreciendo la correcta clasificación de operaciones negativas mientras presenta dificultades significativas para detectar correctamente operaciones positivas. La diferencia entre el elevado AUC y la baja sensibilidad observada en Random Forest resulta especialmente relevante desde el punto de vista metodológico. Aunque el modelo logra discriminar razonablemente bien entre clases en términos probabilísticos, el umbral de clasificación utilizado conduce a una gran cantidad de falsos negativos, afectando directamente su utilidad práctica dentro del contexto financiero. Como consecuencia, el Balanced Accuracy descendió hasta 56.78% y el coeficiente Kappa permaneció en niveles bajos (0.1553), reflejando un desempeño poco equilibrado pese al comportamiento favorable de la curva ROC.
+
+## Análisis de capacidad de generalización y sobreajuste.
+
+Desde la perspectiva de generalización, los resultados sugieren que los modelos lineales y semilineales presentaron un comportamiento más estable sobre datos no observados que los modelos basados en árboles individuales y ensamblajes. La regresión logística mostró un equilibrio consistente entre sensibilidad y especificidad, acompañado de métricas relativamente homogéneas, lo que sugiere una adecuada capacidad para capturar patrones generales sin depender excesivamente de relaciones específicas presentes únicamente en los datos de entrenamiento. El SVM mostró igualmente una buena capacidad de generalización gracias a su capacidad para construir fronteras de decisión robustas en espacios de alta dimensionalidad. No obstante, su desempeño ligeramente inferior frente a la regresión logística podría indicar que las relaciones presentes en los datos poseen un componente parcialmente lineal que favorece el comportamiento de modelos paramétricos más simples. En contraste, los árboles de decisión mostraron una mayor sensibilidad al control de complejidad. Los árboles sin restricciones presentaron señales claras de sobreajuste, mientras que la limitación de profundidad mejoró considerablemente el desempeño predictivo. Esto confirma que las estructuras jerárquicas profundas tienden a adaptarse excesivamente a particularidades del conjunto de entrenamiento, reduciendo su capacidad para generalizar sobre nuevos datos. El caso de Random Forest refleja un fenómeno distinto. Aunque el ensamblaje de múltiples árboles redujo parcialmente el sobreajuste individual, el modelo continuó mostrando un comportamiento sesgado hacia la clase dominante. Esto sugiere que el desbalance presente en los datos afecta significativamente el mecanismo de votación del bosque, favoreciendo la predicción de la categoría más frecuente y reduciendo la capacidad para identificar correctamente operaciones positivas.
+
+## Interpretabilidad y aplicación práctica.
+
+Uno de los aspectos más relevantes del estudio corresponde a la interpretabilidad de los modelos. Los árboles de decisión fueron los modelos más fáciles de interpretar, ya que permiten visualizar explícitamente las reglas utilizadas para clasificar operaciones bursátiles. Variables como Productos, Símbolo, Cantidad y Dirección aparecieron consistentemente en las primeras divisiones de los árboles, proporcionando información valiosa sobre los factores más influyentes dentro del comportamiento de los trades. La regresión logística también presentó un alto nivel de interpretabilidad, permitiendo analizar el efecto individual de las variables explicativas sobre la probabilidad de éxito o fracaso de las operaciones. Esta característica representa una ventaja importante en contextos financieros, donde comprender el impacto de cada variable resulta tan relevante como la capacidad predictiva del modelo. Por el contrario, modelos como SVM y Random Forest poseen una estructura interna considerablemente más compleja. Aunque pueden capturar relaciones no lineales más sofisticadas, la interpretación directa de sus decisiones resulta más difícil, especialmente en aplicaciones donde se requiere justificar operativamente las predicciones generadas.
+
+## Selección del mejor modelo global.
+
+Considerando simultáneamente todas las métricas evaluadas, la Regresión Logística se posiciona como el modelo con mejor desempeño general dentro del estudio. Este modelo presentó el mayor AUC, la mejor exactitud global, el mayor Balanced Accuracy y el coeficiente Kappa más elevado, mostrando además un equilibrio adecuado entre sensibilidad y especificidad. A diferencia de Random Forest, cuyo desempeño estuvo condicionado por un fuerte sesgo hacia la clase mayoritaria, la regresión logística logró mantener una capacidad de clasificación más balanceada entre operaciones positivas y negativas. Asimismo, superó al SVM tanto en exactitud como en especificidad, mientras conservó una sensibilidad prácticamente equivalente. Desde una perspectiva práctica, la regresión logística ofrece además ventajas importantes relacionadas con interpretabilidad, estabilidad y facilidad de implementación computacional. Estas características la convierten en una alternativa particularmente adecuada para aplicaciones financieras donde no solamente interesa maximizar el desempeño predictivo, sino también comprender y justificar las decisiones generadas por el modelo.
+En conjunto, los resultados sugieren que las relaciones presentes en los datos bursátiles poseen una estructura suficientemente compleja para requerir modelos capaces de capturar múltiples interacciones, pero al mismo tiempo conservan patrones relativamente estables y parcialmente lineales que favorecen el desempeño de modelos estadísticos más parsimoniosos. Bajo este contexto, la regresión logística logró el mejor equilibrio entre capacidad predictiva, estabilidad e interpretabilidad, posicionándose como la mejor alternativa global entre los modelos evaluados en este estudio.
+
+### Comparación integral de los mejores modelos.
+
+Una vez evaluados los distintos enfoques de clasificación utilizados en el análisis de trades bursátiles, se seleccionó el mejor modelo de cada familia metodológica con el objetivo de realizar una comparación global entre técnicas lineales, métodos de separación no lineal, árboles de decisión y modelos ensamblados. Los modelos considerados fueron: 
+Mejor modelo logístico: Regresión Logística.
+Mejor modelo MSV (Máquinas de Soporte Vectorial): SVM.
+Mejor árbol de decisión: Árbol con profundidad máxima controlada. 
+Mejor modelo de bosque: Random Forest con ajuste de nodesize. 
+La comparación se realizó utilizando métricas fundamentales de clasificación: Accuracy, Sensibilidad, Especificidad, Balanced Accuracy, coeficiente Kappa y Área Bajo la Curva ROC (AUC), ya que cada una aporta información distinta sobre el comportamiento predictivo del modelo.
+
+
+```{r}
+resultados_modelos <- data.frame(
+  Modelo = c(
+    "Regresión Logística",
+    "SVM",
+    "Árbol Máxima Profundidad",
+    "Random Forest (nodesize = 10)"
+  ),
+  Accuracy = c("73.73%", "70.87%", "67.06%", "68.43%"),
+  Sensibilidad = c("65.05%", "65.21%", "64.74%", "23.76%"),
+  Especificidad = c("92.08%", "82.84%", "71.95%", "89.55%"),
+  Balanced_Accuracy = c("78.57%", "74.02%", "68.34%", "56.78%"),
+  Kappa = c("0.4866", "0.4183", "0.3268", "0.1553"),
+  AUC = c("0.7668", "0.7555", "0.7007", "0.7551")
+)
+print(resultados_modelos)
+```
+
+El análisis comparativo permite identificar diferencias importantes en la capacidad predictiva y en el equilibrio de clasificación de cada metodología.
+La regresión logística presentó el mejor desempeño global entre todos los modelos evaluados. Alcanzó el mayor Accuracy (73.73%), el AUC más alto (0.7668) y también el mayor valor de Balanced Accuracy (78.57%), lo cual indica un comportamiento equilibrado entre ambas clases. Además, obtuvo la especificidad más elevada (92.08%), mostrando una gran capacidad para identificar correctamente operaciones pertenecientes a la clase negativa. El coeficiente Kappa de 0.4866 también fue el más alto de todos los modelos, reflejando el mayor nivel de concordancia entre predicciones y valores reales más allá del azar. 
+El modelo SVM mostró un comportamiento competitivo y relativamente cercano al de la regresión logística. Su AUC de 0.7555 indica una capacidad discriminativa alta, mientras que la sensibilidad de 65.21% fue ligeramente superior a la obtenida por la regresión logística. Esto sugiere que el SVM logra detectar una proporción similar de casos positivos relevantes. Sin embargo, su especificidad fue menor (82.84%), lo que indica una mayor cantidad de falsos positivos respecto al modelo logístico. A pesar de ello, el desempeño general del SVM puede considerarse sólido y estable.
+
+En el caso de los árboles de decisión, el modelo con profundidad máxima controlada fue claramente superior a las demás variantes de árboles evaluadas previamente. Su principal fortaleza fue alcanzar un AUC de 0.7007, superior al resto de árboles individuales analizados en el estudio. Además, mantuvo un desempeño relativamente equilibrado entre sensibilidad y especificidad. Sin embargo, su capacidad predictiva global permaneció por debajo de la obtenida por los modelos logísticos y por SVM. Esto evidencia que, aunque los árboles ofrecen interpretabilidad y reglas de decisión claras, poseen limitaciones para capturar relaciones complejas presentes en los datos financieros.
+
+Por otro lado, el Random Forest con ajuste de nodesize mostró un comportamiento mixto. Aunque alcanzó un Accuracy relativamente competitivo (68.43%) y una especificidad elevada (89.55%), presentó una sensibilidad extremadamente baja (23.76%), indicando dificultades importantes para detectar correctamente operaciones positivas. Esto refleja un sesgo considerable hacia la clase mayoritaria. Su AUC de 0.7551 evidencia que el modelo sí posee buena capacidad discriminativa en términos probabilísticos, pero el umbral de clasificación utilizado favoreció fuertemente la predicción de la clase negativa. El bajo valor de Kappa (0.1553) confirma además una concordancia limitada entre predicciones y observaciones reales.
+
+Desde una perspectiva metodológica, también pueden identificarse diferencias importantes entre los enfoques evaluados. La regresión logística ofrece alta interpretabilidad y estabilidad estadística, permitiendo comprender claramente el efecto de cada variable sobre la probabilidad de éxito de una operación. El SVM aporta mayor flexibilidad para modelar fronteras de separación complejas, aunque con menor interpretabilidad. Los árboles de decisión destacan por la facilidad para representar reglas explícitas de clasificación, mientras que Random Forest mejora la robustez mediante ensamblajes de múltiples árboles, aunque sacrificando transparencia en el proceso de decisión.
+
+En términos prácticos, los resultados sugieren que los patrones presentes en las operaciones bursátiles poseen componentes tanto lineales como no lineales. Sin embargo, la superioridad observada en la regresión logística indica que gran parte de la información predictiva puede capturarse adecuadamente mediante relaciones relativamente estables entre variables explicativas y la dirección de los trades. Asimismo, el desempeño competitivo del SVM y del Random Forest confirma la existencia de interacciones más complejas que también contribuyen al comportamiento del mercado, aunque dichas relaciones no fueron suficientes para superar el rendimiento global del modelo logístico bajo las configuraciones evaluadas.
+
+## Selección y justificación del mejor modelo.
+
+A partir de la comparación realizada entre los mejores modelos de cada familia metodológica —Regresión Logística, Máquinas de Soporte Vectorial (SVM), Árbol de Decisión con profundidad máxima y Random Forest— se determinó que el modelo con mejor desempeño global para la clasificación de trades bursátiles fue la Regresión Logística.
+La selección de este modelo se fundamenta tanto en criterios estadísticos como en consideraciones prácticas relacionadas con el problema de predicción financiera abordado en el estudio. Desde el punto de vista cuantitativo, la regresión logística obtuvo los mejores resultados globales en la mayoría de las métricas de evaluación utilizadas. En particular, alcanzó el valor más alto de Accuracy (73.73%), superando al SVM (70.87%), al árbol con profundidad máxima (67.06%) y al Random Forest (68.43%). Este resultado indica que el modelo fue capaz de clasificar correctamente una mayor proporción de operaciones dentro del conjunto de prueba.
+Adicionalmente, la regresión logística presentó el valor más elevado de AUC (0.7668), superando ligeramente al SVM (0.7555) y al Random Forest (0.7551), mientras que la diferencia respecto al árbol de decisión fue considerable. El área bajo la curva ROC constituye una de las métricas más relevantes dentro de problemas de clasificación binaria, ya que evalúa la capacidad del modelo para distinguir correctamente entre ambas clases independientemente del umbral de decisión utilizado. Por lo tanto, este resultado demuestra que la regresión logística fue el modelo con mayor capacidad discriminativa entre operaciones exitosas y no exitosas.
+
+Otro aspecto fundamental fue el equilibrio observado entre sensibilidad y especificidad. El modelo alcanzó una sensibilidad de 65.05%, indicando una adecuada capacidad para identificar correctamente operaciones pertenecientes a la clase positiva. Simultáneamente, obtuvo una especificidad de 92.08%, la más alta entre todos los modelos analizados. Esto implica que la regresión logística presentó una capacidad sobresaliente para evitar falsas clasificaciones de operaciones negativas como positivas, aspecto especialmente importante dentro de contextos bursátiles donde un falso positivo puede traducirse en decisiones de inversión incorrectas y potenciales pérdidas financieras.
+
+Asimismo, la Balanced Accuracy alcanzó 78.57%, reflejando un desempeño equilibrado entre ambas clases pese al desbalance presente en los datos. Este punto resulta particularmente relevante debido a que varios modelos mostraron sesgos importantes hacia la clase mayoritaria. Por ejemplo, el Random Forest presentó una sensibilidad considerablemente baja (23.76%), evidenciando dificultades para detectar correctamente operaciones positivas, aun cuando mantenía altos niveles de especificidad. En comparación, la regresión logística logró conservar un equilibrio mucho más estable entre ambas métricas.
+
+El coeficiente Kappa obtenido por la regresión logística (0.4866) también fue superior al de los demás modelos. Esta métrica evalúa el nivel de concordancia entre las predicciones y los valores reales descontando el acuerdo esperado por azar. Aunque el valor alcanzado no representa una concordancia perfecta, sí evidencia una capacidad predictiva moderadamente sólida y superior al resto de enfoques evaluados.
+
+Desde una perspectiva metodológica, la regresión logística también ofrece ventajas importantes relacionadas con la interpretabilidad y estabilidad estadística. A diferencia de modelos más complejos como SVM o Random Forest, la regresión logística permite interpretar directamente el efecto de cada variable sobre la probabilidad de ocurrencia de un evento. En el contexto bursátil, esta característica resulta especialmente valiosa, ya que facilita comprender qué variables influyen en el comportamiento de los trades y cómo impactan sobre la probabilidad de éxito o fracaso de una operación.
+
+Por otra parte, aunque el modelo SVM mostró resultados competitivos y una capacidad discriminativa relativamente cercana, su menor interpretabilidad dificulta explicar de manera transparente las relaciones aprendidas por el algoritmo.
+
+En cuanto a los árboles de decisión, si bien proporcionaron reglas claras y fácilmente interpretables, su desempeño predictivo fue inferior. Incluso el árbol con profundidad máxima, que fue el mejor dentro de su categoría, presentó niveles de Accuracy y AUC menores a los obtenidos por la regresión logística y el SVM. 
+
+Respecto al Random Forest, aunque logró valores competitivos de AUC y especificidad, presentó un desequilibrio considerable entre clases, especialmente debido a su baja sensibilidad. Esto indica que el modelo tendía a favorecer excesivamente la clasificación de la clase mayoritaria, reduciendo su capacidad para detectar correctamente operaciones positivas relevantes.
+
+No obstante, aunque la regresión logística fue seleccionada como el mejor modelo general, también presenta ciertas limitaciones. En primer lugar, el desempeño alcanzado, aunque superior al resto de modelos, todavía se encuentra lejos de niveles considerados altamente robustos en sistemas predictivos financieros reales. Esto sugiere que el comportamiento del mercado incorpora componentes altamente dinámicos, ruido estadístico y relaciones complejas que difícilmente pueden ser capturadas completamente mediante modelos tradicionales. Además, la estabilidad de las relaciones identificadas podría modificarse con el tiempo debido a cambios estructurales en las condiciones del mercado, volatilidad financiera o eventos externos no incluidos dentro de los datos analizados.
+
+De igual manera, el desbalance de clases observado en el conjunto de datos representa una dificultad importante para todos los modelos evaluados. Aunque la regresión logística logró manejar esta situación de manera más equilibrada que los demás enfoques, todavía existe margen de mejora mediante técnicas adicionales de balanceo, selección de variables, optimización de umbrales o métodos ensamblados más avanzados.
+
+En conjunto, los resultados permiten concluir que la regresión logística representó la alternativa más sólida dentro de los modelos analizados, al combinar el mejor desempeño predictivo global, una adecuada capacidad discriminativa, equilibrio entre sensibilidad y especificidad, estabilidad estadística e interpretabilidad. Estas características la convierten en la opción más adecuada para explicar y predecir el comportamiento de las operaciones bursátiles dentro del contexto evaluado en este estudio.
+
+## Conclusiones generales y recomendaciones.
+
+Los resultados obtenidos evidencian que existe información relevante dentro de los datos capaz de explicar parcialmente el comportamiento de las operaciones bursátiles. Todos los modelos evaluados lograron superar claramente el desempeño esperado por azar, lo que confirma la presencia de patrones estadísticos asociados al éxito o fracaso de los trades. Sin embargo, también se observó que la capacidad predictiva alcanzada permanece en niveles moderados, reflejando la complejidad inherente de los mercados financieros y la dificultad de modelar completamente dinámicas influenciadas por volatilidad, incertidumbre y factores externos no observados.
+
+Uno de los hallazgos más importantes del estudio fue la relevancia recurrente de ciertas variables dentro de prácticamente todos los modelos analizados. En particular, variables como Simbolo, Productos, Cantidad, Direccion y Codigo mostraron una influencia significativa sobre la clasificación de las operaciones. Este comportamiento sugiere que las características propias del activo financiero negociado y el tamaño de las transacciones representan factores determinantes dentro de la dinámica de los trades bursátiles. Asimismo, variables temporales como Mes, Dia_Semana, Hora y Minuto aportaron capacidad predictiva adicional, aunque con menor importancia relativa, indicando que el contexto temporal del mercado también influye parcialmente en el comportamiento de las operaciones.
+
+La comparación global entre metodologías permitió identificar diferencias importantes entre modelos lineales y no lineales. La Regresión Logística presentó el mejor desempeño general del estudio, alcanzando un Accuracy de 73.73%, un AUC de 0.7668 y un Balanced Accuracy de 0.7857. Además, mostró una elevada especificidad (92.08%) y una sensibilidad moderada (65.05%), reflejando un comportamiento equilibrado entre ambas clases. Estos resultados indican que gran parte de las relaciones predictivas presentes en los datos pueden ser capturadas mediante estructuras relativamente estables y lineales. Adicionalmente, la interpretabilidad estadística del modelo constituye una ventaja importante dentro del contexto financiero, ya que permite comprender el impacto de cada variable sobre la probabilidad de éxito de las operaciones bursátiles.
+
+En términos generales, los resultados muestran que las operaciones bursátiles presentan patrones parcialmente predecibles, especialmente cuando se consideran simultáneamente variables relacionadas con el instrumento financiero operado, el volumen de la transacción y ciertas condiciones temporales del mercado. No obstante, también se evidencia que ningún modelo logró una capacidad predictiva perfecta, lo que confirma la naturaleza inherentemente compleja, dinámica y parcialmente aleatoria de los mercados financieros.
+
+Desde una perspectiva práctica, los resultados permiten formular diversas recomendaciones relevantes. En primer lugar, para aplicaciones donde la interpretabilidad, estabilidad estadística y explicación del comportamiento del mercado sean prioritarias, la Regresión Logística representa la alternativa más adecuada debido a su equilibrio entre precisión, robustez y facilidad de interpretación. En segundo lugar, cuando el objetivo principal sea capturar relaciones más complejas y maximizar la capacidad predictiva, modelos basados en ensamblajes como Random Forest pueden ofrecer ventajas importantes, particularmente si se complementan con estrategias de optimización y balanceo de clases.
+
+En conclusión, el estudio demuestra que las técnicas de aprendizaje supervisado constituyen herramientas valiosas para el análisis de operaciones bursátiles, permitiendo identificar patrones relevantes y construir modelos predictivos con capacidad moderada de generalización. Entre los modelos evaluados, la Regresión Logística presentó el mejor desempeño global al combinar estabilidad estadística, interpretabilidad y capacidad discriminativa. Sin embargo, los resultados también evidencian que la predicción financiera continúa siendo un problema altamente complejo, influenciado por múltiples factores dinámicos y no lineales. Por ello, los modelos predictivos deben entenderse como herramientas complementarias de apoyo analítico dentro de procesos más amplios de toma de decisiones y gestión de riesgo financiero, y no como mecanismos definitivos de predicción absoluta del comportamiento del mercado.
+
+
